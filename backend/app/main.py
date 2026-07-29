@@ -37,6 +37,7 @@ from .routers import (
     notifications,
     reports,
     search,
+    masters,
 )
 
 # ─── Create all DB tables ─────────────────────────────────────────────────────
@@ -196,6 +197,7 @@ app.include_router(
 )
 app.include_router(search.router, prefix="/api/search", tags=["Search"])
 app.include_router(health.router, prefix="/health", tags=["Health"])
+app.include_router(masters.router, prefix="/api/masters", tags=["Masters"])
 
 
 

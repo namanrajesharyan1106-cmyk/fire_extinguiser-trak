@@ -11,7 +11,12 @@ from .inspection import Inspection
 from .location import Location
 from .maintenance import Maintenance
 from .role import Permission, Role, role_permissions
-from .system import Department, Plant, SystemConfig
+from .system import (
+    MasterPlant, MasterDepartment, SequenceTracker, SystemConfig,
+    MasterArea, MasterBuilding, MasterFloor, 
+    MasterAssetType, MasterCapacityType, 
+    MasterRiskCategory, MasterInspectionFrequency
+)
 from .user import User
 
 __all__ = [
@@ -22,8 +27,9 @@ __all__ = [
     "User",
     "RefreshToken",
     "PasswordHistory",
-    "Plant",
-    "Department",
+    "MasterPlant",
+    "MasterDepartment",
+    "SequenceTracker",
     "SystemConfig",
     "Location",
     "Asset",
@@ -33,4 +39,11 @@ __all__ = [
     "AuditLog",
     "Notification",
     "Attachment",
+    "MasterArea",
+    "MasterBuilding",
+    "MasterFloor",
+    "MasterAssetType",
+    "MasterCapacityType",
+    "MasterRiskCategory",
+    "MasterInspectionFrequency",
 ]

@@ -4,6 +4,7 @@ Search router — global search across assets, locations, inspections, maintenan
 
 from typing import List
 
+# pyrefly: ignore [missing-import]
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 

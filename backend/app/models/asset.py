@@ -2,9 +2,9 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .location import Location
-    from .asset import Asset, AssetHistory
     from .inspection import Inspection
     from .maintenance import Maintenance
+    from .system import MasterAssetType, MasterCapacityType
 
 import datetime
 from typing import Optional
@@ -25,8 +25,11 @@ class Asset(Base):
     asset_id: Mapped[str] = mapped_column(String, primary_key=True)
     serial_number: Mapped[Optional[str]] = mapped_column(String)
     asset_number: Mapped[Optional[str]] = mapped_column(String, unique=True)
-    asset_type: Mapped[Optional[str]] = mapped_column(String)
-    capacity: Mapped[Optional[str]] = mapped_column(String)
+    
+    # Master Data Foreign Keys
+    asset_type_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("master_asset_types.id", ondelete="SET NULL"), index=True)
+    capacity_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("master_capacity_types.id", ondelete="SET NULL"), index=True)
+    
     manufacturer: Mapped[Optional[str]] = mapped_column(String)
     manufacturing_date: Mapped[Optional[datetime.date]] = mapped_column(Date)
     refill_date: Mapped[Optional[datetime.date]] = mapped_column(Date)
@@ -55,6 +58,17 @@ class Asset(Base):
     maintenance: Mapped[list["Maintenance"]] = relationship(
         "Maintenance", back_populates="asset"
     )
+
+    asset_type_rel: Mapped[Optional["MasterAssetType"]] = relationship("MasterAssetType")
+    capacity_rel: Mapped[Optional["MasterCapacityType"]] = relationship("MasterCapacityType")
+
+    @property
+    def asset_type(self) -> Optional[str]:
+        return self.asset_type_rel.name if self.asset_type_rel else None
+
+    @property
+    def capacity(self) -> Optional[str]:
+        return self.capacity_rel.name if self.capacity_rel else None
 
     @property
     def current_location_id(self) -> Optional[str]:

@@ -22,7 +22,7 @@ interface LocationQR {
   department: string | null;
   area: string | null;
   qr_code: string | null;
-  current_asset_id: string | null;
+  current_assets_count: number;
   status: string;
 }
 
@@ -283,7 +283,7 @@ const QRCodes: React.FC = () => {
               <TableRow>
                 <TableCell>{tab === 0 ? 'Location ID' : 'Asset ID'}</TableCell>
                 <TableCell>{tab === 0 ? 'Location Name' : 'Asset Type'}</TableCell>
-                <TableCell>{tab === 0 ? 'Current Asset' : 'Location'}</TableCell>
+                <TableCell>{tab === 0 ? 'Current Assets' : 'Location'}</TableCell>
                 <TableCell>QR Value</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell align="right">Actions</TableCell>
@@ -298,7 +298,7 @@ const QRCodes: React.FC = () => {
                 currentItems.map((item: any) => {
                   const id = tab === 0 ? item.location_id : item.asset_id;
                   const name = tab === 0 ? item.location_name : item.asset_type;
-                  const relation = tab === 0 ? item.current_asset_id : item.current_location_id;
+                  const relation = tab === 0 ? (item.current_assets_count ? `${item.current_assets_count} Asset(s)` : null) : item.current_location_id;
                   const val = tab === 0 ? (item.qr_code || id) : id;
                   
                   return (

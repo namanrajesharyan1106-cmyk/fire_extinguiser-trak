@@ -7,19 +7,23 @@ import {
   TablePagination, InputAdornment, Chip, Tooltip
 } from '@mui/material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit2, Link as LinkIcon, Trash2, Search, Unlink } from 'lucide-react';
+import { Plus, Edit2, Link as LinkIcon, Trash2, Search, Unlink, QrCode } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import api from '../api/axios';
 import { toast } from 'react-toastify';
+import AssetAssignmentDrawer from '../components/AssetAssignmentDrawer';
+import QRScannerDialog from '../components/QRScannerDialog';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface Asset {
   asset_id: string;
   serial_number: string;
   asset_type: string;
+  asset_type_id?: number;
   capacity: string | null;
+  capacity_id?: number;
   manufacturer: string | null;
   manufacturing_date: string | null;
   refill_date: string | null;
@@ -41,8 +45,8 @@ interface Location {
 const assetSchema = z.object({
   asset_id: z.string().optional(),
   serial_number: z.string().min(1, 'Serial number is required'),
-  asset_type: z.string().min(1, 'Asset type is required'),
-  capacity: z.string().optional(),
+  asset_type_id: z.coerce.number().min(1, 'Asset type is required'),
+  capacity_id: z.coerce.number().optional(),
   manufacturer: z.string().optional(),
   manufacturing_date: z.string().optional(),
   refill_date: z.string().optional(),
@@ -71,11 +75,10 @@ const Assets: React.FC = () => {
   // Dialog state
   const [open, setOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedAssetForLink, setSelectedAssetForLink] = useState<string | null>(null);
-  const [selectedLocationForLink, setSelectedLocationForLink] = useState<string>('');
-  const [confirmLinkData, setConfirmLinkData] = useState<{ errors: string[], warnings: string[] } | null>(null);
 
   // Pagination & filter state
   const [page, setPage] = useState(0);
@@ -107,6 +110,15 @@ const Assets: React.FC = () => {
       const items = res.data?.data?.items;
       return Array.isArray(items) ? items : [];
     },
+  });
+
+  // GET /masters/active
+  const { data: mastersData } = useQuery({
+    queryKey: ['mastersActive'],
+    queryFn: async () => {
+      const res = await api.get('/masters/active');
+      return res.data?.data;
+    }
   });
 
   const assets: Asset[] = Array.isArray(assetsRaw) ? assetsRaw : [];
@@ -161,31 +173,6 @@ const Assets: React.FC = () => {
     },
   });
 
-  const linkMutation = useMutation({
-    mutationFn: async (payload?: { force?: boolean }) =>
-      api.post(`/assets/${selectedAssetForLink}/link/${selectedLocationForLink}`, payload || {}),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['assets'] });
-      queryClient.invalidateQueries({ queryKey: ['locations-dropdown'] });
-      toast.success('Asset linked to location!');
-      handleLinkClose();
-      setConfirmLinkData(null);
-    },
-    onError: (err: any) => {
-      // The backend global HTTPException handler maps `detail` to `message`
-      const detail = err.response?.data?.message || err.response?.data?.detail;
-      if (detail && typeof detail === 'object' && detail.requires_confirmation) {
-        setConfirmLinkData({ errors: detail.errors || [], warnings: detail.warnings || [] });
-      } else {
-        const msg = typeof detail === 'object' ? (detail?.message || JSON.stringify(detail?.errors)) : detail;
-        toast.error(msg || 'Linking failed');
-        if (detail?.errors?.length > 0) {
-           detail.errors.forEach((e: string) => toast.error(e));
-        }
-      }
-    },
-  });
-
   const unlinkMutation = useMutation({
     mutationFn: async (id: string) => api.delete(`/assets/${id}/unlink`),
     onSuccess: () => {
@@ -202,8 +189,8 @@ const Assets: React.FC = () => {
     if (asset) {
       setEditingId(asset.asset_id);
       setValue('serial_number', asset.serial_number ?? '');
-      setValue('asset_type', asset.asset_type ?? '');
-      setValue('capacity', asset.capacity ?? '');
+      setValue('asset_type_id', asset.asset_type_id ?? ('' as any));
+      setValue('capacity_id', asset.capacity_id ?? ('' as any));
       setValue('manufacturer', asset.manufacturer ?? '');
       setValue('manufacturing_date', asset.manufacturing_date?.slice(0, 10) ?? '');
       setValue('refill_date', asset.refill_date?.slice(0, 10) ?? '');
@@ -218,17 +205,27 @@ const Assets: React.FC = () => {
 
   const handleClose = () => { setOpen(false); reset(); setEditingId(null); };
 
-  const handleLinkOpen = (asset_id: string) => {
-    setSelectedAssetForLink(asset_id);
-    setSelectedLocationForLink('');
+  const handleLinkOpen = (id: string) => {
+    setSelectedAssetForLink(id);
     setLinkOpen(true);
   };
 
-  const handleLinkClose = () => {
-    setLinkOpen(false);
-    setSelectedAssetForLink(null);
-    setSelectedLocationForLink('');
-    setConfirmLinkData(null);
+  const handleScanAsset = (decodedText: string) => {
+    setScannerOpen(false);
+    
+    // Attempt to match decodedText (might be full QR JSON or just the ID)
+    let scannedId = decodedText;
+    try {
+      const parsed = JSON.parse(decodedText);
+      if (parsed.asset_id) scannedId = parsed.asset_id;
+    } catch(e) {}
+    
+    const asset = assetsRaw?.find(a => a.asset_id === scannedId);
+    if (asset) {
+      handleLinkOpen(asset.asset_id);
+    } else {
+      toast.error('Scanned asset not found in database.');
+    }
   };
 
   const onSubmit = (data: AssetForm) => mutation.mutate(data);
@@ -250,9 +247,24 @@ const Assets: React.FC = () => {
       {/* Header */}
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Typography variant="h4" fontWeight="bold">Assets</Typography>
-        <Button variant="contained" startIcon={<Plus size={18} />} onClick={() => handleOpen()}>
-          Add Asset
-        </Button>
+        <Box display="flex" gap={2}>
+          <Button
+            variant="outlined"
+            color="primary"
+            startIcon={<QrCode size={18} />}
+            onClick={() => setScannerOpen(true)}
+          >
+            Scan Asset
+          </Button>
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<Plus size={18} />}
+            onClick={() => handleOpen()}
+          >
+            Add Asset
+          </Button>
+        </Box>
       </Box>
 
       {/* Filters */}
@@ -282,11 +294,9 @@ const Assets: React.FC = () => {
           <InputLabel>Type</InputLabel>
           <Select value={filterType} label="Type" onChange={(e) => { setFilterType(e.target.value); setPage(0); }}>
             <MenuItem value=""><em>All Types</em></MenuItem>
-            <MenuItem value="CO2">CO2</MenuItem>
-            <MenuItem value="DCP">DCP</MenuItem>
-            <MenuItem value="Foam">Foam</MenuItem>
-            <MenuItem value="Water">Water</MenuItem>
-            <MenuItem value="Halon">Halon</MenuItem>
+            {mastersData?.asset_types?.map((p: any) => (
+              <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>
+            ))}
           </Select>
         </FormControl>
       </Box>
@@ -389,8 +399,22 @@ const Assets: React.FC = () => {
             )}
             <TextField label="Serial Number *" {...register('serial_number')} error={!!errors.serial_number} helperText={errors.serial_number?.message} />
             <Box display="grid" gridTemplateColumns="1fr 1fr" gap={2}>
-              <TextField label="Asset Type *" {...register('asset_type')} error={!!errors.asset_type} helperText={errors.asset_type?.message} placeholder="e.g. CO2, DCP" />
-              <TextField label="Capacity" {...register('capacity')} placeholder="e.g. 5KG" />
+              <FormControl fullWidth error={!!errors.asset_type_id}>
+                <InputLabel shrink>Asset Type *</InputLabel>
+                <Select native label="Asset Type *" {...register('asset_type_id')} defaultValue="">
+                  <option value="" disabled></option>
+                  {mastersData?.asset_types?.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </Select>
+                {errors.asset_type_id && <Typography color="error" variant="caption">{errors.asset_type_id.message}</Typography>}
+              </FormControl>
+              <FormControl fullWidth error={!!errors.capacity_id}>
+                <InputLabel shrink>Capacity</InputLabel>
+                <Select native label="Capacity" {...register('capacity_id')} defaultValue="">
+                  <option value=""></option>
+                  {mastersData?.capacity_types?.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </Select>
+                {errors.capacity_id && <Typography color="error" variant="caption">{errors.capacity_id.message}</Typography>}
+              </FormControl>
             </Box>
             <TextField label="Manufacturer" {...register('manufacturer')} />
             <Box display="grid" gridTemplateColumns="1fr 1fr 1fr" gap={2}>
@@ -420,76 +444,17 @@ const Assets: React.FC = () => {
         </form>
       </Dialog>
 
-      {/* Link Asset Dialog */}
-      <Dialog open={linkOpen} onClose={handleLinkClose} maxWidth="xs" fullWidth>
-        <DialogTitle>Link Asset to Location</DialogTitle>
-        <DialogContent dividers>
-          <Typography variant="body2" sx={{ mb: 2 }}>
-            Assign <strong>{selectedAssetForLink}</strong> to a location.
-          </Typography>
-          <FormControl fullWidth>
-            <InputLabel>Location</InputLabel>
-            <Select
-              value={selectedLocationForLink}
-              label="Location"
-              onChange={(e) => setSelectedLocationForLink(e.target.value)}
-            >
-              {locations.map((loc) => (
-                <MenuItem key={loc.location_id} value={loc.location_id}>
-                  {loc.location_name} — {loc.location_id}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleLinkClose}>Cancel</Button>
-          <Button
-            variant="contained"
-            disabled={linkMutation.isPending || !selectedLocationForLink}
-            onClick={() => linkMutation.mutate({})}
-          >
-            {linkMutation.isPending ? 'Linking...' : 'Link Asset'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Link Confirm Dialog */}
-      <Dialog open={!!confirmLinkData} onClose={() => setConfirmLinkData(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>Confirm Asset Assignment</DialogTitle>
-        <DialogContent dividers>
-          {confirmLinkData?.errors && confirmLinkData.errors.length > 0 && (
-            <Box mb={2}>
-              <Typography color="error" fontWeight="bold">Errors:</Typography>
-              <ul style={{ color: 'red', marginTop: 4 }}>
-                {confirmLinkData.errors.map((e, i) => <li key={i}>{e}</li>)}
-              </ul>
-            </Box>
-          )}
-          {confirmLinkData?.warnings && confirmLinkData.warnings.length > 0 && (
-            <Box mb={2}>
-              <Typography color="warning.main" fontWeight="bold">Warnings:</Typography>
-              <ul style={{ color: '#ed6c02', marginTop: 4 }}>
-                {confirmLinkData.warnings.map((w, i) => <li key={i}>{w}</li>)}
-              </ul>
-            </Box>
-          )}
-          <Typography variant="body1" sx={{ mt: 2 }}>
-            Do you want to proceed and move it?
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConfirmLinkData(null)}>Cancel</Button>
-          <Button
-            variant="contained"
-            color="warning"
-            disabled={linkMutation.isPending}
-            onClick={() => linkMutation.mutate({ force: true })}
-          >
-            {linkMutation.isPending ? 'Linking...' : 'Move Asset'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <AssetAssignmentDrawer
+        open={linkOpen}
+        onClose={() => setLinkOpen(false)}
+        asset={assetsRaw?.find(a => a.asset_id === selectedAssetForLink) || null}
+      />
+      
+      <QRScannerDialog 
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onScan={handleScanAsset}
+      />
 
       {/* Delete Confirm Dialog */}
       <Dialog open={!!deleteConfirmId} onClose={() => setDeleteConfirmId(null)}>

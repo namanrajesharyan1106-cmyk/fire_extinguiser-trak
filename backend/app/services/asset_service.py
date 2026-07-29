@@ -19,6 +19,29 @@ def validate_asset_assignment(
     asset = asset_repo.get(db, asset_id)
     location = location_repo.get(db, location_id)
 
+    print("\n" + "="*50)
+    print("STEP 2: ASSET LOOKUP")
+    print(f"Asset Exists: {asset is not None}")
+    if asset:
+        print(f"Asset Active: {asset.status == 'Active'}")
+        print(f"Current Location: {asset.location_id}")
+        print(f"Asset Type: {asset.asset_type}")
+        print(f"Capacity: {asset.capacity}")
+        print(f"Complete Asset Object: {asset.__dict__}")
+
+    print("\nSTEP 3: LOCATION LOOKUP")
+    print(f"Location Exists: {location is not None}")
+    if location:
+        print(f"Location Active: {location.status == 'Active'}")
+        print(f"Location ID: {location.location_id}")
+        print(f"Location Name: {location.location_name}")
+        print(f"Required Asset: {location.required_asset_type}")
+        print(f"Capacity: {location.required_capacity}")
+        print(f"Current Assigned Assets: {location.current_assets_count}")
+        print(f"Remaining Capacity: {location.remaining_capacity}")
+        print(f"Complete Location Object: {location.__dict__}")
+    print("="*50 + "\n")
+
     if not asset:
         return False, [f"Asset '{asset_id}' not found."], []
     if not location:
@@ -70,16 +93,16 @@ def validate_asset_assignment(
     if is_refill_overdue(asset):
         warnings.append(f"Asset '{asset_id}' refill is overdue.")
 
-    # 7. Location already has an asset
-    current_asset = db.query(Asset).filter(Asset.location_id == location_id).first()
-    if current_asset and current_asset.asset_id != asset_id:
-        warnings.append(
-            f"Location '{location_id}' currently has asset '{current_asset.asset_id}'. It will be unlinked automatically."
-        )
+    # 7. Check Capacity
+    if location.current_assets_count >= location.max_assets:
+        if not (asset.location_id == location_id):  # if it's not already in this location
+            errors.append(f"Location '{location_id}' is at full capacity ({location.max_assets}).")
 
     if (errors or warnings) and not force:
+        print(f"STEP 4: MASTER DATA VALIDATION FAILED - Errors: {errors}")
         return False, errors, warnings
 
+    print("STEP 4: MASTER DATA VALIDATION PASSED")
     return True, errors, warnings
 
 
@@ -96,28 +119,14 @@ def perform_asset_assignment(
         asset = db.query(Asset).filter(Asset.asset_id == asset_id).with_for_update().first()
         if not asset:
             raise ValueError(f"Asset '{asset_id}' not found.")
-        location_repo.get(db, location_id)
+        location = location_repo.get(db, location_id)
 
         old_location_id = asset.location_id
 
-        # Unlink existing asset from location if different
-        current_asset_at_loc = (
-            db.query(Asset).filter(Asset.location_id == location_id).with_for_update().first()
-        )
-        if current_asset_at_loc and current_asset_at_loc.asset_id != asset_id:
-            current_asset_at_loc.location_id = None
-            history = AssetHistory(
-                asset_id=current_asset_at_loc.asset_id,
-                old_location_id=location_id,
-                new_location_id=None,
-                movement_type="Replacement",
-                movement_reason="Replaced by another asset",
-                changed_by=changed_by,
-                comments=f"Replaced by asset {asset_id}",
-                movement_date=datetime.datetime.utcnow(),
-            )
-            db.add(current_asset_at_loc)
-            db.add(history)
+        # Ensure we don't exceed capacity if it's a new assignment to this location
+        if old_location_id != location_id:
+            if location.current_assets_count >= location.max_assets:
+                raise ValueError(f"Location '{location_id}' is at full capacity.")
 
         # Assign
         asset.location_id = location_id
@@ -137,6 +146,16 @@ def perform_asset_assignment(
         db.add(asset)
         db.add(history)
     
+    print("\n" + "="*50)
+    print("STEP 6: DATABASE UPDATE")
+    print("Immediately before db.commit()")
+    print(f"Asset Object: {asset.__dict__}")
+    print(f"Location Object: {location.__dict__}")
+    print(f"Foreign Key asset.location_id: {asset.location_id}")
+    print(f"Location.current_assets_count: {location.current_assets_count}")
+    print(f"Generated History ID: {history.id}")
+    print("="*50 + "\n")
+
     db.commit()
 
     return {

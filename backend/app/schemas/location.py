@@ -23,8 +23,6 @@ class LocationBase(BaseModel):
     building: OptionalStr = None
     floor: OptionalStr = None
     machine: OptionalStr = None
-    required_asset_type: OptionalStr = None
-    required_capacity: OptionalStr = None
     risk_category: OptionalStr = "Medium"
     qr_code: OptionalStr = None
     status: OptionalStr = "Active"
@@ -38,6 +36,8 @@ class LocationCreate(LocationBase):
         None,
         description="Unique ID — auto-generated if not provided",
     )
+    required_asset_type_id: int
+    required_capacity_id: int
 
 
 class LocationUpdate(BaseModel):
@@ -49,8 +49,8 @@ class LocationUpdate(BaseModel):
     building: OptionalStr = None
     floor: OptionalStr = None
     machine: OptionalStr = None
-    required_asset_type: OptionalStr = None
-    required_capacity: OptionalStr = None
+    required_asset_type_id: Optional[int] = None
+    required_capacity_id: Optional[int] = None
     risk_category: OptionalStr = None
     status: OptionalStr = None
     inspection_frequency: Optional[int] = Field(None, ge=1, le=365)
@@ -60,7 +60,13 @@ class LocationUpdate(BaseModel):
 
 class LocationResponse(LocationBase):
     model_config = ConfigDict(from_attributes=True)
-    current_asset_id: Optional[str] = None
+    required_asset_type: Optional[str] = None
+    required_capacity: Optional[str] = None
+    required_asset_type_id: Optional[int] = None
+    required_capacity_id: Optional[int] = None
+    max_assets: Optional[int] = 15
+    current_assets_count: Optional[int] = 0
+    remaining_capacity: Optional[int] = 15
     qr_image_path: Optional[str] = None
     last_inspection_date: Optional[datetime] = None
     created_at: Optional[datetime] = None

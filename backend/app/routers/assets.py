@@ -308,6 +308,108 @@ def unlink_asset(
     db.commit()
     return create_api_response(True, "Asset unlinked", result)
 
+@router.get("/{asset_id}/compatible-locations")
+def get_compatible_locations(
+    asset_id: str,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(auth.require_permission("view_locations")),
+):
+    import logging
+    logger = logging.getLogger(__name__)
+
+    asset = db.query(models.Asset).filter(models.Asset.asset_id == asset_id).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+        
+    locations = db.query(models.Location).filter(
+        models.Location.status == "Active"
+    ).all()
+    
+    current_plant = asset.location.plant if asset.location else ""
+    current_area = asset.location.area if asset.location else ""
+    
+    compatible = []
+    rejected = []
+    
+    for loc in locations:
+        reasons = []
+        is_compatible = True
+        
+        # 1. Asset Type Match
+        if asset.asset_type_id != loc.required_asset_type_id:
+            reasons.append({
+                "reason": "Asset Type Mismatch",
+                "expected": loc.required_asset_type or "None",
+                "actual": asset.asset_type or "None"
+            })
+            is_compatible = False
+            
+        # 2. Capacity Match
+        if asset.capacity_id != loc.required_capacity_id:
+            reasons.append({
+                "reason": "Capacity Mismatch",
+                "expected": loc.required_capacity or "None",
+                "actual": asset.capacity or "None"
+            })
+            is_compatible = False
+            
+        # 3. Full Capacity
+        if loc.remaining_capacity <= 0:
+            if asset.current_location_id != loc.location_id:
+                reasons.append({
+                    "reason": "Location Full",
+                    "expected": f"Max {loc.max_assets}",
+                    "actual": f"Current {loc.current_assets_count}"
+                })
+                is_compatible = False
+                
+        # Debug Logging STEP 8
+        print("\n--- COMPATIBILITY CHECK ---")
+        print(f"Location ID: {loc.location_id}")
+        print(f"Asset Type ID: {asset.asset_type_id} | Location Req Asset ID: {loc.required_asset_type_id}")
+        print(f"Capacity ID: {asset.capacity_id} | Location Req Capacity ID: {loc.required_capacity_id}")
+        print(f"Remaining Capacity: {loc.remaining_capacity}")
+        print(f"Comparison Result: {'MATCH' if is_compatible else 'REJECTED'}")
+        if not is_compatible:
+            print(f"Reasons: {[r['reason'] for r in reasons]}")
+
+        loc_data = {
+            "location_id": loc.location_id,
+            "location_name": loc.location_name,
+            "plant": loc.plant,
+            "area": loc.area,
+            "building": loc.building,
+            "floor": loc.floor,
+            "required_asset_type": loc.required_asset_type,
+            "required_capacity": loc.required_capacity,
+            "max_assets": loc.max_assets,
+            "current_assets_count": loc.current_assets_count,
+            "remaining_capacity": loc.remaining_capacity
+        }
+                
+        if is_compatible:
+            compatible.append(loc_data)
+        else:
+            loc_data["rejection_reasons"] = reasons
+            rejected.append(loc_data)
+            
+    # Sort compatible locations
+    def sort_key(l):
+        same_plant = 1 if l["plant"] == current_plant and current_plant else 0
+        same_area = 1 if l["area"] == current_area and current_area else 0
+        return (
+            same_plant,
+            same_area,
+            l["remaining_capacity"]
+        )
+        
+    compatible.sort(key=sort_key, reverse=True)
+    
+    return create_api_response(True, "Compatibility evaluated", {
+        "compatible": compatible,
+        "rejected": rejected
+    })
+
 
 @router.get("/{asset_id}/history", response_model=schemas.APIResponse[List[schemas.AssetHistoryResponse]])
 def get_asset_history(

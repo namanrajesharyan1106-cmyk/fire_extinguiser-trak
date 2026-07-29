@@ -10,6 +10,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    ForeignKey,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
     from .asset import Asset
     from .inspection import Inspection
     from .maintenance import Maintenance
+    from .system import MasterAssetType, MasterCapacityType
 
 
 class Location(Base):
@@ -70,9 +72,9 @@ class Location(Base):
     floor: Mapped[Optional[str]] = mapped_column(String)
     machine: Mapped[Optional[str]] = mapped_column(String)
 
-    # Asset Requirement
-    required_asset_type: Mapped[Optional[str]] = mapped_column(String)
-    required_capacity: Mapped[Optional[str]] = mapped_column(String)
+    # Master Data Foreign Keys
+    required_asset_type_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("master_asset_types.id", ondelete="SET NULL"), index=True)
+    required_capacity_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("master_capacity_types.id", ondelete="SET NULL"), index=True)
 
     # Safety
     risk_category: Mapped[Optional[str]] = mapped_column(String)
@@ -109,9 +111,11 @@ class Location(Base):
         back_populates="locations",
     )
 
-    assets: Mapped[Optional["Asset"]] = relationship(
+    max_assets: Mapped[int] = mapped_column(Integer, default=15)
+
+    assets: Mapped[list["Asset"]] = relationship(
         "Asset",
-        uselist=False,
+        uselist=True,
         back_populates="location",
     )
 
@@ -127,6 +131,21 @@ class Location(Base):
         cascade="all, delete-orphan",
     )
 
+    required_asset_type_rel: Mapped[Optional["MasterAssetType"]] = relationship("MasterAssetType")
+    required_capacity_rel: Mapped[Optional["MasterCapacityType"]] = relationship("MasterCapacityType")
+
     @property
-    def current_asset_id(self) -> Optional[str]:
-        return self.assets.asset_id if self.assets else None
+    def required_asset_type(self) -> Optional[str]:
+        return self.required_asset_type_rel.name if self.required_asset_type_rel else None
+
+    @property
+    def required_capacity(self) -> Optional[str]:
+        return self.required_capacity_rel.name if self.required_capacity_rel else None
+
+    @property
+    def current_assets_count(self) -> int:
+        return len(self.assets) if self.assets else 0
+
+    @property
+    def remaining_capacity(self) -> int:
+        return max(0, self.max_assets - self.current_assets_count)

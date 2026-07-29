@@ -37,11 +37,6 @@ interface Inspection {
   remarks: string | null;
 }
 
-interface Location {
-  location_id: string;
-  location_name: string;
-}
-
 // ─── Checklist fields ─────────────────────────────────────────────────────────
 const CHECKLIST_FIELDS = [
   { key: 'pressure', label: 'Pressure Gauge' },

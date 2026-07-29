@@ -56,6 +56,8 @@ export interface Location {
   machine?: string;
   required_asset_type?: string;
   required_capacity?: string;
+  required_asset_type_id?: number;
+  required_capacity_id?: number;
   risk_category?: string;
   qr_code?: string;
   qr_image_path?: string;
@@ -71,8 +73,10 @@ export interface Location {
 export interface Asset {
   asset_id: string;
   serial_number: string;
-  asset_type: string;
+  asset_type?: string;
   capacity?: string;
+  asset_type_id?: number;
+  capacity_id?: number;
   manufacturer?: string;
   manufacturing_date?: string;
   refill_date?: string;

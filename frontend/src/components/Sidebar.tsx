@@ -5,7 +5,7 @@ import {
 } from '@mui/material';
 import { 
   LayoutDashboard, MapPin, Shield, QrCode, 
-  ClipboardCheck, Wrench, FileText, Settings, Users
+  ClipboardCheck, Wrench, FileText, Settings, Users, Database
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -22,6 +22,7 @@ const menuItems = [
 ];
 
 const adminItems = [
+  { text: 'Master Data', icon: <Database />, path: '/master-data' },
   { text: 'Users', icon: <Users />, path: '/users' },
   { text: 'Settings', icon: <Settings />, path: '/settings' },
 ];
@@ -29,6 +30,9 @@ const adminItems = [
 const Sidebar: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const userStr = localStorage.getItem('user');
+  const user = userStr ? JSON.parse(userStr) : null;
+  const isAdmin = user?.role === 'ADMIN';
 
   return (
     <Drawer
@@ -71,28 +75,32 @@ const Sidebar: React.FC = () => {
             </ListItem>
           ))}
         </List>
-        <Divider sx={{ borderColor: 'rgba(255,255,255,0.1)', my: 2 }} />
-        <List>
-          {adminItems.map((item) => (
-            <ListItem key={item.text} disablePadding>
-              <ListItemButton 
-                selected={location.pathname === item.path}
-                onClick={() => navigate(item.path)}
-                sx={{
-                  '&.Mui-selected': {
-                    backgroundColor: 'rgba(255,255,255,0.1)',
-                    borderLeft: '4px solid #3b82f6'
-                  }
-                }}
-              >
-                <ListItemIcon sx={{ color: '#94a3b8' }}>
-                  {item.icon}
-                </ListItemIcon>
-                <ListItemText primary={item.text} sx={{ color: '#cbd5e1' }} />
-              </ListItemButton>
-            </ListItem>
-          ))}
-        </List>
+        {isAdmin && (
+          <>
+            <Divider sx={{ borderColor: 'rgba(255,255,255,0.1)', my: 2 }} />
+            <List>
+              {adminItems.map((item) => (
+                <ListItem key={item.text} disablePadding>
+                  <ListItemButton 
+                    selected={location.pathname === item.path}
+                    onClick={() => navigate(item.path)}
+                    sx={{
+                      '&.Mui-selected': {
+                        backgroundColor: 'rgba(255,255,255,0.1)',
+                        borderLeft: '4px solid #3b82f6'
+                      }
+                    }}
+                  >
+                    <ListItemIcon sx={{ color: '#94a3b8' }}>
+                      {item.icon}
+                    </ListItemIcon>
+                    <ListItemText primary={item.text} sx={{ color: '#cbd5e1' }} />
+                  </ListItemButton>
+                </ListItem>
+              ))}
+            </List>
+          </>
+        )}
       </Box>
     </Drawer>
   );

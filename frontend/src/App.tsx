@@ -17,6 +17,8 @@ import Inspections from './pages/Inspections';
 import Maintenance from './pages/Maintenance';
 import Reports from './pages/Reports';
 import Users from './pages/Users';
+import MasterData from './pages/MasterData';
+import Settings from './pages/Settings';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -65,6 +67,8 @@ function App() {
               <Route path="maintenance" element={<Maintenance />} />
               <Route path="reports" element={<Reports />} />
               <Route path="users" element={<Users />} />
+              <Route path="master-data" element={<MasterData />} />
+              <Route path="settings" element={<Settings />} />
               {/* Catch-all → redirect to dashboard */}
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
