@@ -29,5 +29,17 @@ build/
 venv/
 .venv/
 
-# Uploads (optional)
+# Uploads
 backend/uploads/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python cache
+.pytest_cache/
+.mypy_cache/
+
+# Coverage
+.coverage
+htmlcov/
