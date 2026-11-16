@@ -1,10 +1,9 @@
-from typing import Any
+from typing import Any, List, Optional
 """
 Dashboard router — live KPIs, trends, department/risk breakdowns.
 """
 
 from datetime import datetime, timedelta
-from typing import List
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import extract, func, exists
@@ -19,7 +18,7 @@ router = APIRouter()
 def create_api_response(
     success: bool, message: str, data: Any = None, errors: Any = None
 ) -> dict:
-    return create_api_response(True, "Dashboard data retrieved", {"success": success, "message": message, "data": data, "errors": errors})
+    return {"success": success, "message": message, "data": data, "errors": errors}
 
 
 
@@ -31,87 +30,146 @@ def _compliance_percent(total: int, compliant: int) -> float:
 
 @router.get("/stats", response_model=schemas.DashboardStats)
 def get_dashboard_stats(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_dashboard")),
 ):
     today = datetime.utcnow()
     today_date = today.date()
 
+    # Parse optional filter dates
+    start_dt: Optional[datetime] = None
+    end_dt: Optional[datetime] = None
+    as_of_date = today_date
+
+    if start_date:
+        try:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+        except ValueError:
+            pass
+
+    if end_date:
+        try:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            as_of_date = end_dt.date()
+        except ValueError:
+            pass
+
+    # Master inventory counts — preserved as master totals per requirements
     total_locations = (
         db.query(models.Location).filter(models.Location.status == "Active").count()
     )
     total_assets = db.query(models.Asset).count()
     installed_assets = (
         db.query(models.Asset)
-        .filter(models.Asset.location_id is not None)
+        .filter(models.Asset.location_id.is_not(None))
         .count()
     )
     unassigned_assets = total_assets - installed_assets
 
-    # Inspections completed today
-    inspection_completed_today = (
-        db.query(models.Inspection)
-        .filter(func.date(models.Inspection.inspection_date) == today_date)
-        .count()
-    )
+    # Inspections count: if date range provided, count within range; otherwise count completed today
+    inspections_in_range = None
+    inspections_passed = None
+    inspections_failed = None
 
-    # Inspections due today (locations where next inspection date has passed)
+    if start_dt and end_dt:
+        insp_query = db.query(models.Inspection).filter(
+            models.Inspection.inspection_date >= start_dt,
+            models.Inspection.inspection_date <= end_dt,
+        )
+        inspections_in_range = insp_query.count()
+        inspection_completed_today = inspections_in_range
+        inspections_passed = insp_query.filter(models.Inspection.overall_status == "Pass").count()
+        inspections_failed = insp_query.filter(models.Inspection.overall_status == "Fail").count()
+    elif start_dt:
+        insp_query = db.query(models.Inspection).filter(
+            models.Inspection.inspection_date >= start_dt
+        )
+        inspections_in_range = insp_query.count()
+        inspection_completed_today = inspections_in_range
+        inspections_passed = insp_query.filter(models.Inspection.overall_status == "Pass").count()
+        inspections_failed = insp_query.filter(models.Inspection.overall_status == "Fail").count()
+    elif end_dt:
+        insp_query = db.query(models.Inspection).filter(
+            models.Inspection.inspection_date <= end_dt
+        )
+        inspections_in_range = insp_query.count()
+        inspection_completed_today = inspections_in_range
+        inspections_passed = insp_query.filter(models.Inspection.overall_status == "Pass").count()
+        inspections_failed = insp_query.filter(models.Inspection.overall_status == "Fail").count()
+    else:
+        inspection_completed_today = (
+            db.query(models.Inspection)
+            .filter(func.date(models.Inspection.inspection_date) == today_date)
+            .count()
+        )
+
+    # Maintenance in range
+    maintenance_in_range = None
+    if start_dt and end_dt:
+        maintenance_in_range = (
+            db.query(models.Maintenance)
+            .filter(
+                models.Maintenance.opened_date >= start_dt,
+                models.Maintenance.opened_date <= end_dt,
+            )
+            .count()
+        )
+
+    # Inspections due (locations where next inspection date has passed as of target date)
     inspection_due_today = 0
+    overdue_inspections = 0
     active_locations = (
         db.query(models.Location)
         .filter(
             models.Location.status == "Active",
-            models.Location.inspection_frequency is not None,
+            models.Location.inspection_frequency.is_not(None),
         )
         .all()
     )
     for loc in active_locations:
         if loc.last_inspection_date is None:
             inspection_due_today += 1
-        else:
-            next_due = loc.last_inspection_date + timedelta(
-                days=loc.inspection_frequency
-            )
-            if today >= next_due:
-                inspection_due_today += 1
-
-    open_maintenance = (
-        db.query(models.Maintenance)
-        .filter(models.Maintenance.status.notin_(["Closed", "Verified"]))
-        .count()
-    )
-
-    # Expired assets
-    expired_assets = (
-        db.query(models.Asset)
-        .filter(
-            models.Asset.expiry_date <= today_date,
-            models.Asset.status == "Active",
-        )
-        .count()
-    )
-
-    # Refill due
-    refill_due = (
-        db.query(models.Asset)
-        .filter(
-            models.Asset.refill_date <= today_date,
-            models.Asset.status == "Active",
-        )
-        .count()
-    )
-
-    # Overdue inspections
-    overdue_inspections = 0
-    for loc in active_locations:
-        if loc.last_inspection_date is None:
             overdue_inspections += 1
         else:
             next_due = loc.last_inspection_date + timedelta(
                 days=loc.inspection_frequency
             )
-            if today > next_due:
+            if as_of_date >= next_due.date():
+                inspection_due_today += 1
+            if as_of_date > next_due.date():
                 overdue_inspections += 1
+
+    # Open maintenance tickets (not closed or verified; if end_date given, opened on or before end_date)
+    open_maint_query = db.query(models.Maintenance).filter(
+        models.Maintenance.status.notin_(["Closed", "Verified"])
+    )
+    if end_dt:
+        open_maint_query = open_maint_query.filter(
+            (models.Maintenance.opened_date <= end_dt) | (models.Maintenance.opened_date.is_(None))
+        )
+    open_maintenance = open_maint_query.count()
+
+    # Expired assets as of target date
+    expired_assets = (
+        db.query(models.Asset)
+        .filter(
+            models.Asset.expiry_date <= as_of_date,
+            models.Asset.status == "Active",
+        )
+        .count()
+    )
+
+    # Refill due as of target date
+    refill_due = (
+        db.query(models.Asset)
+        .filter(
+            models.Asset.refill_date <= as_of_date,
+            models.Asset.status == "Active",
+        )
+        .count()
+    )
 
     # Locations that have an asset currently assigned
     locations_with_assets = (
@@ -138,18 +196,104 @@ def get_dashboard_stats(
         refill_due=refill_due,
         compliance_percent=compliance_percent,
         overdue_inspections=overdue_inspections,
+        inspections_in_range=inspections_in_range,
+        maintenance_in_range=maintenance_in_range,
+        inspections_passed=inspections_passed,
+        inspections_failed=inspections_failed,
+        start_date=start_date,
+        end_date=end_date,
     )
 
 
 @router.get("/monthly-trend", response_model=List[schemas.MonthlyTrendItem])
 def get_monthly_trend(
     months: int = 12,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_dashboard")),
 ):
     result = []
     today = datetime.utcnow()
 
+    # If start_date and end_date are provided, determine the distinct months in that range
+    if start_date and end_date:
+        try:
+            s_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            e_dt = datetime.strptime(end_date, "%Y-%m-%d")
+            # Build list of year-months in ascending order
+            curr = s_dt.replace(day=1)
+            target_end = e_dt.replace(day=1)
+            month_targets = []
+            while curr <= target_end:
+                month_targets.append(curr)
+                # Next month
+                if curr.month == 12:
+                    curr = curr.replace(year=curr.year + 1, month=1)
+                else:
+                    curr = curr.replace(month=curr.month + 1)
+
+            # If month_targets is empty (start > end), fallback
+            if not month_targets:
+                month_targets = [s_dt.replace(day=1)]
+
+            for target in month_targets:
+                year = target.year
+                month = target.month
+
+                inspections = (
+                    db.query(models.Inspection)
+                    .filter(
+                        extract("year", models.Inspection.inspection_date) == year,
+                        extract("month", models.Inspection.inspection_date) == month,
+                    )
+                    .count()
+                )
+
+                passed = (
+                    db.query(models.Inspection)
+                    .filter(
+                        extract("year", models.Inspection.inspection_date) == year,
+                        extract("month", models.Inspection.inspection_date) == month,
+                        models.Inspection.overall_status == "Pass",
+                    )
+                    .count()
+                )
+
+                failed = (
+                    db.query(models.Inspection)
+                    .filter(
+                        extract("year", models.Inspection.inspection_date) == year,
+                        extract("month", models.Inspection.inspection_date) == month,
+                        models.Inspection.overall_status == "Fail",
+                    )
+                    .count()
+                )
+
+                maintenance = (
+                    db.query(models.Maintenance)
+                    .filter(
+                        extract("year", models.Maintenance.opened_date) == year,
+                        extract("month", models.Maintenance.opened_date) == month,
+                    )
+                    .count()
+                )
+
+                result.append(
+                    schemas.MonthlyTrendItem(
+                        month=target.strftime("%b %Y"),
+                        inspections=inspections,
+                        maintenance=maintenance,
+                        passed=passed,
+                        failed=failed,
+                    )
+                )
+
+            return result
+        except Exception:
+            pass  # Fallback to default month calculation if any parsing fails
+
+    # Default calculation: past `months` months ending today
     for i in range(months - 1, -1, -1):
         target = today.replace(day=1) - timedelta(days=i * 28)
         year = target.year
@@ -353,3 +497,118 @@ def get_asset_type_distribution(
     )
 
     return [{"asset_type": t, "count": c} for t, c in types]
+
+
+@router.get("/inspection-status-distribution", response_model=List[schemas.InspectionStatusItem])
+def get_inspection_status_distribution(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(auth.require_permission("view_dashboard")),
+):
+    query = db.query(
+        models.Inspection.overall_status,
+        func.count(models.Inspection.inspection_id).label("count")
+    )
+    if start_date:
+        try:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            query = query.filter(models.Inspection.inspection_date >= start_dt)
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            query = query.filter(models.Inspection.inspection_date <= end_dt)
+        except ValueError:
+            pass
+
+    results = query.group_by(models.Inspection.overall_status).all()
+    return [schemas.InspectionStatusItem(status=s if s else "Unknown", count=c) for s, c in results]
+
+
+@router.get("/overdue-inspections")
+def get_overdue_inspections(
+    limit: int = 10,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(auth.require_permission("view_dashboard")),
+):
+    today = datetime.utcnow()
+    overdue_list = []
+    locations = (
+        db.query(models.Location)
+        .filter(
+            models.Location.status == "Active",
+            models.Location.inspection_frequency.is_not(None),
+        )
+        .all()
+    )
+    for loc in locations:
+        asset_id = loc.assets[0].asset_id if loc.assets else None
+        if loc.last_inspection_date is None:
+            overdue_list.append({
+                "location_id": loc.location_id,
+                "location_name": loc.location_name,
+                "last_inspection": None,
+                "days_overdue": 999,
+                "current_asset_id": asset_id,
+                "department": loc.department,
+                "area": loc.area
+            })
+        else:
+            next_due = loc.last_inspection_date + timedelta(days=loc.inspection_frequency)
+            if today > next_due:
+                days = (today - next_due).days
+                overdue_list.append({
+                    "location_id": loc.location_id,
+                    "location_name": loc.location_name,
+                    "last_inspection": loc.last_inspection_date.isoformat(),
+                    "days_overdue": days,
+                    "current_asset_id": asset_id,
+                    "department": loc.department,
+                    "area": loc.area
+                })
+    overdue_list.sort(key=lambda x: x["days_overdue"], reverse=True)
+    return overdue_list[:limit]
+
+
+@router.get("/recent-maintenance")
+def get_recent_maintenance(
+    limit: int = 10,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(auth.require_permission("view_dashboard")),
+):
+    query = db.query(models.Maintenance)
+    if start_date:
+        try:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            query = query.filter(models.Maintenance.opened_date >= start_dt)
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            query = query.filter(models.Maintenance.opened_date <= end_dt)
+        except ValueError:
+            pass
+
+    tickets = (
+        query.order_by(models.Maintenance.opened_date.desc().nullslast(), models.Maintenance.maintenance_id.desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            "maintenance_id": t.maintenance_id,
+            "asset_id": t.asset_id,
+            "location_id": t.location_id,
+            "issue": t.issue,
+            "priority": t.priority,
+            "status": t.status,
+            "assigned_to": t.assigned_to,
+            "opened_date": t.opened_date.isoformat() if t.opened_date else None,
+        }
+        for t in tickets
+    ]

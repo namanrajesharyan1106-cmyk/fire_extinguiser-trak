@@ -33,14 +33,6 @@ interface Asset {
   photo: string | null;
 }
 
-interface Location {
-  location_id: string;
-  location_name: string;
-  plant: string | null;
-  building: string | null;
-  floor: string | null;
-}
-
 // ─── Schema ──────────────────────────────────────────────────────────────────
 const assetSchema = z.object({
   asset_id: z.string().optional(),
@@ -101,17 +93,6 @@ const Assets: React.FC = () => {
     },
   });
 
-  // GET /locations — returns {success, data: {items, total}}
-  const { data: locationsRaw } = useQuery({
-    queryKey: ['locations-dropdown'],
-    queryFn: async () => {
-      const res = await api.get('/locations', { params: { limit: 500 } });
-      // Safely extract the items array
-      const items = res.data?.data?.items;
-      return Array.isArray(items) ? items : [];
-    },
-  });
-
   // GET /masters/active
   const { data: mastersData } = useQuery({
     queryKey: ['mastersActive'],
@@ -122,7 +103,6 @@ const Assets: React.FC = () => {
   });
 
   const assets: Asset[] = Array.isArray(assetsRaw) ? assetsRaw : [];
-  const locations: Location[] = Array.isArray(locationsRaw) ? locationsRaw : [];
 
   // Client-side search filter
   const filtered = assets.filter((a) => {

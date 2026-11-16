@@ -1,11 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import {
   Drawer, Box, Typography, IconButton, Button, TextField, InputAdornment,
-  Chip, Card, CardActionArea, Divider, CircularProgress, LinearProgress,
-  useTheme, useMediaQuery, Collapse, Dialog, DialogTitle, DialogContent, DialogActions
+  Chip, Card, CardActionArea, CircularProgress, LinearProgress,
+  useTheme, useMediaQuery, Collapse
 } from '@mui/material';
 import {
-  X, Search, Filter, MapPin, Hash, CheckCircle, AlertTriangle, ArrowRight, ArrowRightCircle
+  X, Search, MapPin, CheckCircle, AlertTriangle, ArrowRight, ArrowRightCircle
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
@@ -322,7 +322,7 @@ const AssetAssignmentDrawer: React.FC<AssetAssignmentDrawerProps> = ({ open, onC
                             </Typography>
                           </Box>
                           {isFull ? (
-                            <Chip label="FULL" color="error" size="small" fontWeight="bold" />
+                            <Chip label="FULL" color="error" size="small" sx={{ fontWeight: 'bold' }} />
                           ) : (
                             <Chip label={`${loc.remaining_capacity} left`} color="success" size="small" variant="outlined" />
                           )}

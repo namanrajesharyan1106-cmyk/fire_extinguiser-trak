@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel
 
 
@@ -13,6 +14,13 @@ class DashboardStats(BaseModel):
     refill_due: int
     compliance_percent: float
     overdue_inspections: int
+    # Optional extensions for date range filtering
+    inspections_in_range: Optional[int] = None
+    maintenance_in_range: Optional[int] = None
+    inspections_passed: Optional[int] = None
+    inspections_failed: Optional[int] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
 
 
 class MonthlyTrendItem(BaseModel):
@@ -21,6 +29,11 @@ class MonthlyTrendItem(BaseModel):
     maintenance: int
     passed: int
     failed: int
+
+
+class InspectionStatusItem(BaseModel):
+    status: str
+    count: int
 
 
 class DepartmentStatsItem(BaseModel):

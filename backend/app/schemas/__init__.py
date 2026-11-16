@@ -19,6 +19,7 @@ from .base import APIResponse
 from .dashboard import (
     DashboardStats,
     DepartmentStatsItem,
+    InspectionStatusItem,
     MonthlyTrendItem,
     RiskStatsItem,
 )

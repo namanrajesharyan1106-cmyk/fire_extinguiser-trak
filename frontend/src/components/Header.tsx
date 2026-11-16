@@ -8,16 +8,20 @@ import {
   Avatar,
   InputBase,
   Badge,
+  Tooltip,
 } from '@mui/material';
-import { Search, Bell, LogOut } from 'lucide-react';
+import { Search, Bell, LogOut, Menu as MenuIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api/axios';
 import { Menu, MenuItem, ListItemText, CircularProgress, Divider, Popover, List, ListItem, Typography as MuiTypography, Button } from '@mui/material';
+import { useSidebar } from '../context/SidebarContext';
 
 const Header: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { isMobile, desktopCollapsed, toggleSidebar } = useSidebar();
+  const sidebarWidth = isMobile ? 0 : desktopCollapsed ? 72 : 260;
   
   const [searchQuery, setSearchQuery] = React.useState('');
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
@@ -112,20 +116,37 @@ const Header: React.FC = () => {
     <AppBar
       position="fixed"
       sx={{
-        zIndex: (theme) => theme.zIndex.drawer + 1,
+        width: isMobile ? '100%' : `calc(100% - ${sidebarWidth}px)`,
+        ml: isMobile ? 0 : `${sidebarWidth}px`,
+        transition: (theme) =>
+          theme.transitions.create(['width', 'margin'], {
+            easing: theme.transitions.easing.sharp,
+            duration: theme.transitions.duration.enteringScreen,
+          }),
         backgroundColor: '#ffffff',
         color: '#172B4D',
-        boxShadow: '0 1px 2px 0 rgb(0 0 0 / 0.05)',
+        boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05)',
+        borderBottom: '1px solid #E2E8F0',
       }}
     >
-      <Toolbar>
-        <Box
-          sx={{
-            width: 260,
-            display: 'flex',
-            alignItems: 'center',
-          }}
-        />
+      <Toolbar sx={{ px: { xs: 2, sm: 3 }, minHeight: '64px !important' }}>
+        <Tooltip title={isMobile ? 'Open navigation' : desktopCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} arrow>
+          <IconButton
+            color="inherit"
+            aria-label="Toggle navigation"
+            onClick={toggleSidebar}
+            edge="start"
+            sx={{
+              mr: 2,
+              color: '#334155',
+              p: 1,
+              borderRadius: '8px',
+              '&:hover': { backgroundColor: '#F1F5F9' },
+            }}
+          >
+            <MenuIcon size={22} />
+          </IconButton>
+        </Tooltip>
 
         <Box
           sx={{
