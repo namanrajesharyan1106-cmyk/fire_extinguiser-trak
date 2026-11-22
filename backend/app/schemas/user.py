@@ -59,3 +59,5 @@ class UserResponse(UserBase):
     failed_login_attempts: Optional[int] = 0
     locked_until: Optional[datetime] = None
     created_at: Optional[datetime] = None
+    permissions: Optional[list[str]] = []
+    plants: Optional[list[str]] = []

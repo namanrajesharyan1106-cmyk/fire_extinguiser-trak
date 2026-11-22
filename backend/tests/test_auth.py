@@ -9,7 +9,7 @@ def test_auth_flow():
     print("1. Testing /api/auth/login")
     response = client.post(
         "/api/auth/login",
-        data={"username": "admin@fireext.com", "password": "admin123"},
+        data={"username": "admin@fireext.com", "password": "change_me_immediately_123"},
     )
     assert response.status_code == 200, f"Login failed: {response.text}"
 

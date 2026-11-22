@@ -1054,16 +1054,15 @@ def get_compatible_assets_for_location(
             is_compatible = False
 
         # 4. Asset Type Match
-        if location.required_asset_type_id and asset.asset_type_id:
-            if asset.asset_type_id != location.required_asset_type_id:
+        if location.required_asset_type:
+            if not asset.asset_type:
                 reasons.append({
                     "reason": "Asset Type Mismatch",
-                    "expected": location.required_asset_type or "Unspecified",
-                    "actual": asset.asset_type or "Unspecified"
+                    "expected": location.required_asset_type,
+                    "actual": "Unspecified"
                 })
                 is_compatible = False
-        elif location.required_asset_type and asset.asset_type:
-            if location.required_asset_type.strip().lower() != asset.asset_type.strip().lower():
+            elif location.required_asset_type.strip().lower() != asset.asset_type.strip().lower():
                 reasons.append({
                     "reason": "Asset Type Mismatch",
                     "expected": location.required_asset_type,
@@ -1072,16 +1071,15 @@ def get_compatible_assets_for_location(
                 is_compatible = False
 
         # 5. Capacity Match
-        if location.required_capacity_id and asset.capacity_id:
-            if asset.capacity_id != location.required_capacity_id:
+        if location.required_capacity:
+            if not asset.capacity:
                 reasons.append({
                     "reason": "Capacity Mismatch",
-                    "expected": location.required_capacity or "Unspecified",
-                    "actual": asset.capacity or "Unspecified"
+                    "expected": location.required_capacity,
+                    "actual": "Unspecified"
                 })
                 is_compatible = False
-        elif location.required_capacity and asset.capacity:
-            if location.required_capacity.strip().lower() != asset.capacity.strip().lower():
+            elif location.required_capacity.strip().lower() != asset.capacity.strip().lower():
                 reasons.append({
                     "reason": "Capacity Mismatch",
                     "expected": location.required_capacity,

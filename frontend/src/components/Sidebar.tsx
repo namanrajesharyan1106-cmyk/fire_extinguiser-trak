@@ -27,34 +27,35 @@ import {
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useSidebar } from '../context/SidebarContext';
+import { useAuth } from '../context/AuthContext';
 
 const EXPANDED_WIDTH = 260;
 const COLLAPSED_WIDTH = 72;
 
 const menuItems = [
-  { text: 'Dashboard', icon: <LayoutDashboard size={20} />, path: '/' },
-  { text: 'Locations', icon: <MapPin size={20} />, path: '/locations' },
-  { text: 'Assets', icon: <Shield size={20} />, path: '/assets' },
-  { text: 'QR Codes', icon: <QrCode size={20} />, path: '/qrcodes' },
-  { text: 'Inspections', icon: <ClipboardCheck size={20} />, path: '/inspections' },
-  { text: 'Maintenance', icon: <Wrench size={20} />, path: '/maintenance' },
-  { text: 'Reports', icon: <FileText size={20} />, path: '/reports' },
+  { text: 'Dashboard', icon: <LayoutDashboard size={20} />, path: '/', permission: 'view_dashboard' },
+  { text: 'Locations', icon: <MapPin size={20} />, path: '/locations', permission: 'view_locations' },
+  { text: 'Assets', icon: <Shield size={20} />, path: '/assets', permission: 'view_assets' },
+  { text: 'QR Codes', icon: <QrCode size={20} />, path: '/qrcodes', permission: 'view_locations' },
+  { text: 'Inspections', icon: <ClipboardCheck size={20} />, path: '/inspections', permission: 'view_inspections' },
+  { text: 'Maintenance', icon: <Wrench size={20} />, path: '/maintenance', permission: 'view_maintenance' },
+  { text: 'Reports', icon: <FileText size={20} />, path: '/reports', permission: 'view_reports' },
 ];
 
 const adminItems = [
-  { text: 'Master Data', icon: <Database size={20} />, path: '/master-data' },
-  { text: 'Users', icon: <Users size={20} />, path: '/users' },
-  { text: 'Settings', icon: <Settings size={20} />, path: '/settings' },
+  { text: 'Master Data', icon: <Database size={20} />, path: '/master-data', permission: 'manage_system_config' },
+  { text: 'Users', icon: <Users size={20} />, path: '/users', permission: 'view_users' },
+  { text: 'Settings', icon: <Settings size={20} />, path: '/settings', permission: 'manage_system_config' },
 ];
 
 const Sidebar: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { isMobile, mobileOpen, closeSidebar, desktopCollapsed } = useSidebar();
+  const { hasPermission } = useAuth();
 
-  const userStr = localStorage.getItem('user');
-  const user = userStr ? JSON.parse(userStr) : null;
-  const isAdmin = user?.role === 'ADMIN';
+  const visibleMenuItems = menuItems.filter((item) => hasPermission(item.permission));
+  const visibleAdminItems = adminItems.filter((item) => hasPermission(item.permission));
 
   const currentWidth = isMobile ? EXPANDED_WIDTH : desktopCollapsed ? COLLAPSED_WIDTH : EXPANDED_WIDTH;
   const isCollapsed = !isMobile && desktopCollapsed;
@@ -216,12 +217,12 @@ const Sidebar: React.FC = () => {
 
       {/* Navigation items */}
       <Box sx={{ flexGrow: 1, overflowY: 'auto', overflowX: 'hidden', py: 1.5 }}>
-        {renderNavList(menuItems)}
+        {renderNavList(visibleMenuItems)}
 
-        {isAdmin && (
+        {visibleAdminItems.length > 0 && (
           <>
             <Divider sx={{ borderColor: 'rgba(255, 255, 255, 0.08)', my: 1.5, mx: 2 }} />
-            {renderNavList(adminItems, 'Administration')}
+            {renderNavList(visibleAdminItems, 'Administration')}
           </>
         )}
       </Box>

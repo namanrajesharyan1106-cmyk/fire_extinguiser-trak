@@ -7,7 +7,7 @@ def test_users_list():
     print("1. Logging in as Admin...")
     response = client.post(
         "/api/auth/login",
-        data={"username": "admin@fireext.com", "password": "admin123"},
+        data={"username": "admin@fireext.com", "password": "change_me_immediately_123"},
     )
     assert response.status_code == 200, f"Login failed: {response.text}"
     token_data = response.json()["data"]

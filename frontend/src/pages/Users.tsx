@@ -14,6 +14,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import api from '../api/axios';
 import { toast } from 'react-toastify';
+import { useAuth } from '../context/AuthContext';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface User {
@@ -67,7 +68,12 @@ const getInitials = (name: string | null) =>
 const avatarColors = ['#0052cc', '#36B37E', '#FFAB00', '#FF5630', '#6554C0', '#00B8D9'];
 
 // ─── Create User Dialog ───────────────────────────────────────────────────────
-const CreateUserDialog: React.FC<{ open: boolean; onClose: () => void; roles: string[] }> = ({ open, onClose, roles }) => {
+const CreateUserDialog: React.FC<{
+  open: boolean;
+  onClose: () => void;
+  roles: string[];
+  userPlants?: string[];
+}> = ({ open, onClose, roles, userPlants = [] }) => {
   const queryClient = useQueryClient();
   const { register, handleSubmit, reset, control, formState: { errors } } = useForm<CreateUserForm>({
     resolver: zodResolver(createUserSchema),
@@ -160,7 +166,25 @@ const CreateUserDialog: React.FC<{ open: boolean; onClose: () => void; roles: st
               <TextField fullWidth label="Department" {...register('department')} />
             </Grid>
             <Grid item xs={12} sm={6}>
-              <TextField fullWidth label="Plant" {...register('plant')} />
+              {userPlants && userPlants.length > 0 ? (
+                <FormControl fullWidth>
+                  <InputLabel>Plant</InputLabel>
+                  <Controller
+                    name="plant"
+                    control={control}
+                    render={({ field }) => (
+                      <Select {...field} label="Plant" value={field.value || ''}>
+                        <MenuItem value=""><em>None</em></MenuItem>
+                        {userPlants.map((p) => (
+                          <MenuItem key={p} value={p}>{p}</MenuItem>
+                        ))}
+                      </Select>
+                    )}
+                  />
+                </FormControl>
+              ) : (
+                <TextField fullWidth label="Plant" {...register('plant')} />
+              )}
             </Grid>
           </Grid>
         </DialogContent>
@@ -176,8 +200,14 @@ const CreateUserDialog: React.FC<{ open: boolean; onClose: () => void; roles: st
 };
 
 // ─── Edit User Dialog ─────────────────────────────────────────────────────────
-const EditUserDialog: React.FC<{ user: User | null; open: boolean; onClose: () => void; roles: string[] }> = ({
-  user, open, onClose, roles
+const EditUserDialog: React.FC<{
+  user: User | null;
+  open: boolean;
+  onClose: () => void;
+  roles: string[];
+  userPlants?: string[];
+}> = ({
+  user, open, onClose, roles, userPlants = []
 }) => {
   const queryClient = useQueryClient();
   const { register, handleSubmit, control } = useForm<UpdateUserForm>({
@@ -243,7 +273,25 @@ const EditUserDialog: React.FC<{ user: User | null; open: boolean; onClose: () =
               <TextField fullWidth label="Department" {...register('department')} />
             </Grid>
             <Grid item xs={12} sm={6}>
-              <TextField fullWidth label="Plant" {...register('plant')} />
+              {userPlants && userPlants.length > 0 ? (
+                <FormControl fullWidth>
+                  <InputLabel>Plant</InputLabel>
+                  <Controller
+                    name="plant"
+                    control={control}
+                    render={({ field }) => (
+                      <Select {...field} label="Plant" value={field.value || ''}>
+                        <MenuItem value=""><em>None</em></MenuItem>
+                        {userPlants.map((p) => (
+                          <MenuItem key={p} value={p}>{p}</MenuItem>
+                        ))}
+                      </Select>
+                    )}
+                  />
+                </FormControl>
+              ) : (
+                <TextField fullWidth label="Plant" {...register('plant')} />
+              )}
             </Grid>
           </Grid>
         </DialogContent>
@@ -313,6 +361,7 @@ const ResetPasswordDialog: React.FC<{ user: User | null; open: boolean; onClose:
 // ─── Main Page ────────────────────────────────────────────────────────────────
 const Users: React.FC = () => {
   const queryClient = useQueryClient();
+  const { user: currentUser, plants: userPlants } = useAuth();
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
@@ -339,6 +388,23 @@ const Users: React.FC = () => {
 
   const roles: string[] = Array.isArray(rolesData) ? rolesData : [];
   const users: User[] = Array.isArray(usersData) ? usersData : [];
+
+  const ROLE_RANKS: Record<string, number> = {
+    'ADMIN': 100,
+    'IT ADMIN': 80,
+    'SAFETY HEAD': 60,
+    'SAFETY OFFICER': 50,
+    'INSPECTOR': 30,
+    'MAINTENANCE': 30,
+    'VIEWER': 10,
+  };
+
+  const currentUserRole = (currentUser?.role || '').toUpperCase();
+  const currentUserRank = ROLE_RANKS[currentUserRole] || 0;
+  const assignableRoles = roles.filter((r) => {
+    if (currentUserRole === 'ADMIN') return true;
+    return (ROLE_RANKS[r.toUpperCase()] || 0) < currentUserRank;
+  });
 
   const filtered = users.filter((u) => {
     const term = (search || '').toLowerCase();
@@ -496,8 +562,8 @@ const Users: React.FC = () => {
         </TableContainer>
       </Card>
 
-      <CreateUserDialog open={createOpen} onClose={() => setCreateOpen(false)} roles={roles} />
-      <EditUserDialog user={editUser} open={!!editUser} onClose={() => setEditUser(null)} roles={roles} />
+      <CreateUserDialog open={createOpen} onClose={() => setCreateOpen(false)} roles={assignableRoles} userPlants={userPlants} />
+      <EditUserDialog user={editUser} open={!!editUser} onClose={() => setEditUser(null)} roles={assignableRoles} userPlants={userPlants} />
       <ResetPasswordDialog user={resetUser} open={!!resetUser} onClose={() => setResetUser(null)} />
     </Box>
   );

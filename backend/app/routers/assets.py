@@ -26,7 +26,7 @@ from ..services.asset_service import (
 )
 from ..utils import create_audit_log, generate_qr_code_image, model_to_dict, validate_and_sanitize_image
 from .locations import generate_system_id
-from ..core.scope import apply_scope, check_record_scope, get_user_scope
+from ..core.scope import apply_scope, check_record_scope, get_user_scope, validate_plant_param
 
 router = APIRouter()
 
@@ -764,11 +764,16 @@ def get_assets(
     limit: int = 200,
     asset_type: Optional[str] = None,
     status: Optional[str] = None,
+    plant: Optional[str] = None,
     unassigned_only: bool = False,
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_assets")),
 ):
     query = apply_scope(db.query(models.Asset), current_user, db, models.Asset)
+    if plant:
+        scope = get_user_scope(current_user, db)
+        plant_clean = validate_plant_param(plant, scope)
+        query = query.filter(models.Asset.location.has(models.Location.plant == plant_clean))
     if asset_type:
         query = query.filter(models.Asset.asset_type == asset_type)
     if status:

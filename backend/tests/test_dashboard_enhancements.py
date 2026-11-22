@@ -28,6 +28,28 @@ def admin_token():
         if not user:
             user = db.query(models.User).first()
         token = security.create_access_token(data={"sub": str(user.id)})
+
+        # Ensure July 2026 inspections exist for tests
+        july_count = db.query(models.Inspection).filter(
+            models.Inspection.inspection_date >= datetime(2026, 7, 1),
+            models.Inspection.inspection_date <= datetime(2026, 7, 31, 23, 59, 59)
+        ).count()
+        if july_count < 12:
+            loc = db.query(models.Location).first()
+            asset = db.query(models.Asset).first()
+            if loc and asset:
+                for i in range(12 - july_count):
+                    st = "Pass" if i < 9 else "Fail"
+                    insp = models.Inspection(
+                        location_id=loc.location_id,
+                        asset_id=asset.asset_id,
+                        inspection_date=datetime(2026, 7, 15, 10, i),
+                        overall_status=st,
+                        inspector="Tester"
+                    )
+                    db.add(insp)
+                db.commit()
+
         return token
     finally:
         db.close()

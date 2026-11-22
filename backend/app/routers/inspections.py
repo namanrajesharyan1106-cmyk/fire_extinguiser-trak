@@ -14,7 +14,7 @@ from .. import models, schemas
 from ..core.config import settings
 from ..core import database
 from ..core import dependencies as auth
-from ..core.scope import apply_scope, check_record_scope
+from ..core.scope import apply_scope, check_record_scope, get_user_scope, validate_plant_param
 from ..services.inspection_service import process_inspection
 from ..utils import auto_calculate_inspection_status, create_audit_log, validate_and_sanitize_image
 
@@ -34,11 +34,16 @@ def get_inspections(
     location_id: Optional[str] = None,
     asset_id: Optional[str] = None,
     overall_status: Optional[str] = None,
+    plant: Optional[str] = None,
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_inspections")),
 ):
     query = db.query(models.Inspection)
     query = apply_scope(query, current_user, db, models.Inspection)
+    if plant:
+        scope = get_user_scope(current_user, db)
+        plant_clean = validate_plant_param(plant, scope)
+        query = query.filter(models.Inspection.location.has(models.Location.plant == plant_clean))
     if location_id:
         query = query.filter(models.Inspection.location_id == location_id)
     if asset_id:

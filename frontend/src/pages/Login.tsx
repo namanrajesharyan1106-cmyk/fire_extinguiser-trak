@@ -18,6 +18,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
+import { useAuth } from '../context/AuthContext';
 import { Shield, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -41,6 +42,8 @@ const Login: React.FC = () => {
     resolver: zodResolver(loginSchema),
   });
 
+  const { login } = useAuth();
+
   const onSubmit = async (data: LoginForm) => {
     try {
       setError('');
@@ -55,32 +58,20 @@ const Login: React.FC = () => {
         },
       });
 
-      console.log('==============================');
-      console.log('Login Response:', response.data);
-      console.log('==============================');
+      const accessToken = response.data?.access_token || response.data?.data?.access_token;
+      const refreshToken = response.data?.refresh_token || response.data?.data?.refresh_token;
+      const userData = response.data?.data?.user || response.data?.user;
 
-      // Save token — backend hoists access_token to root level
-      if (response.data.access_token) {
-        localStorage.setItem('token', response.data.access_token);
+      if (accessToken) {
+        await login(accessToken, refreshToken || '', userData);
       }
 
-      // Save user — backend wraps inside data.data.user
-      const userData = response.data?.data?.user || response.data?.user;
-      if (userData) {
-        localStorage.setItem('user', JSON.stringify(userData));
-        if (userData.is_first_login) {
-          navigate('/change-password');
-        } else {
-          navigate('/');
-        }
+      if (userData?.is_first_login) {
+        navigate('/change-password');
       } else {
-        console.warn('Backend did not return a user object.');
-        localStorage.removeItem('user');
         navigate('/');
       }
     } catch (err: any) {
-      console.error('Login Error:', err);
-
       setError(
         err?.response?.data?.message ||
         err?.response?.data?.detail ||

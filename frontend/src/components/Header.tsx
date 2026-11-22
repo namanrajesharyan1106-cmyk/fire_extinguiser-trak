@@ -14,13 +14,15 @@ import { Search, Bell, LogOut, Menu as MenuIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api/axios';
-import { Menu, MenuItem, ListItemText, CircularProgress, Divider, Popover, List, ListItem, Typography as MuiTypography, Button } from '@mui/material';
+import { Menu, MenuItem, ListItemText, CircularProgress, Divider, Popover, List, ListItem, Typography as MuiTypography, Button, Select } from '@mui/material';
 import { useSidebar } from '../context/SidebarContext';
+import { useAuth } from '../context/AuthContext';
 
 const Header: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { isMobile, desktopCollapsed, toggleSidebar } = useSidebar();
+  const { user, logout, plants, selectedPlant, setSelectedPlant } = useAuth();
   const sidebarWidth = isMobile ? 0 : desktopCollapsed ? 72 : 260;
   
   const [searchQuery, setSearchQuery] = React.useState('');
@@ -83,32 +85,8 @@ const Header: React.FC = () => {
     },
   });
 
-  // Safely read user from localStorage
-  const getUser = () => {
-    try {
-      const storedUser = localStorage.getItem('user');
-
-      if (
-        !storedUser ||
-        storedUser === 'undefined' ||
-        storedUser === 'null'
-      ) {
-        return {};
-      }
-
-      return JSON.parse(storedUser);
-    } catch (error) {
-      console.error('Invalid user data in localStorage:', error);
-      localStorage.removeItem('user');
-      return {};
-    }
-  };
-
-  const user: any = getUser();
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+  const handleLogout = async () => {
+    await logout();
     navigate('/login');
   };
 
@@ -205,6 +183,34 @@ const Header: React.FC = () => {
         </Menu>
 
         <Box sx={{ flexGrow: 1 }} />
+
+        {/* Plant Switcher: shows user's assigned plants or all for Admin */}
+        {(user?.role === 'ADMIN' || (plants && plants.length > 0)) && (
+          <Box sx={{ minWidth: 160, mr: 2 }}>
+            <Select
+              size="small"
+              value={selectedPlant || ''}
+              onChange={(e) => setSelectedPlant(e.target.value ? String(e.target.value) : null)}
+              displayEmpty
+              sx={{
+                fontSize: '0.85rem',
+                bgcolor: '#F8FAFC',
+                borderRadius: '8px',
+                height: 36,
+                '& .MuiSelect-select': { py: 0.5, px: 1.5 },
+              }}
+            >
+              <MenuItem value="">
+                <em>{user?.role === 'ADMIN' ? 'All Plants' : 'Select Plant'}</em>
+              </MenuItem>
+              {plants && plants.map((p) => (
+                <MenuItem key={p} value={p}>
+                  {p}
+                </MenuItem>
+              ))}
+            </Select>
+          </Box>
+        )}
 
         <Box
           sx={{

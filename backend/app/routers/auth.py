@@ -181,8 +181,22 @@ def terminate_session(
 
 
 @router.get("/me", response_model=schemas.APIResponse[schemas.UserResponse])
-def read_users_me(current_user: models.User = Depends(auth.get_current_user)):
-    return create_api_response(True, "Current user retrieved", current_user)
+def read_users_me(
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db),
+):
+    from ..services.rbac_service import get_role_permissions
+    perms = get_role_permissions(db, current_user.role)
+    scope = get_user_scope(current_user, db)
+    if scope.is_global:
+        plants = [p.name for p in db.query(models.MasterPlant).filter(models.MasterPlant.is_active == True).all()]
+    else:
+        plants = list(scope.plants) if scope.plants else []
+
+    user_dict = schemas.UserResponse.model_validate(current_user).model_dump()
+    user_dict["permissions"] = perms
+    user_dict["plants"] = plants
+    return create_api_response(True, "Current user retrieved", user_dict)
 
 
 @router.post("/change-password", response_model=schemas.APIResponse)

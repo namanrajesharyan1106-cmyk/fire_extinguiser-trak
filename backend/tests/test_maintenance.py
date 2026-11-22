@@ -8,7 +8,7 @@ def test_maintenance_submission():
     print("1. Logging in...")
     response = client.post(
         "/api/auth/login",
-        data={"username": "admin@fireext.com", "password": "admin123"},
+        data={"username": "admin@fireext.com", "password": "change_me_immediately_123"},
     )
     assert response.status_code == 200, f"Login failed: {response.text}"
     token_data = response.json()["data"]
@@ -16,12 +16,23 @@ def test_maintenance_submission():
     headers = {"Authorization": f"Bearer {access_token}"}
     
     print("2. Submitting maintenance ticket...")
+    from app.core.database import SessionLocal
+    from app.models import Asset, Location
+    db = SessionLocal()
+    try:
+        asset = db.query(Asset).first()
+        loc = db.query(Location).first()
+        asset_id = asset.asset_id if asset else "AST-TEST"
+        location_id = loc.location_id if loc else "LOC-TEST"
+    finally:
+        db.close()
+
     maint_resp = client.post(
         "/api/maintenance",
         headers=headers,
         json={
-            "asset_id": "AST-2AE5A2F7",
-            "location_id": "LOC-A7B6BBB3",
+            "asset_id": asset_id,
+            "location_id": location_id,
             "issue": "Test issue",
             "priority": "Medium",
             "source": "Manual"

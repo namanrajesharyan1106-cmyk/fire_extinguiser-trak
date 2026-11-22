@@ -10,14 +10,31 @@ import { Download, FileText, RefreshCw } from 'lucide-react';
 import api from '../api/axios';
 import { toast } from 'react-toastify';
 
-// ─── Excel Export Utility ─────────────────────────────────────────────────────
+// ─── Excel Export Utility (using ExcelJS) ─────────────────────────────────────
 const exportToExcel = async (data: any[], filename: string) => {
   try {
-    const XLSX = await import('xlsx');
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Report');
-    XLSX.writeFile(wb, `${filename}.xlsx`);
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Report');
+
+    if (data.length > 0) {
+      const headers = Object.keys(data[0]);
+      worksheet.columns = headers.map((key) => ({ header: key, key, width: 20 }));
+      data.forEach((row) => worksheet.addRow(row));
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${filename}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
     toast.success(`${filename}.xlsx downloaded!`);
   } catch {
     toast.error('Excel export failed');
