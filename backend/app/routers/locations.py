@@ -200,7 +200,7 @@ def get_locations(
 @router.get("/bulk-upload/sample")
 def download_bulk_upload_sample(
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(auth.require_roles(["ADMIN"]))
+    current_user: models.User = Depends(auth.require_permission("create_location"))
 ):
     """Generate and return a sample Excel file for bulk location upload."""
     from openpyxl.worksheet.datavalidation import DataValidation
@@ -332,7 +332,7 @@ def download_bulk_upload_sample(
 def preview_bulk_upload_locations(
     file: UploadFile = File(...),
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(auth.require_roles(["ADMIN"]))
+    current_user: models.User = Depends(auth.require_permission("create_location"))
 ):
     """Parse and validate Excel rows without writing to DB, returning row-by-row preview with error reasons."""
     if not file.filename.endswith(('.xlsx', '.xls')):
@@ -477,7 +477,7 @@ def preview_bulk_upload_locations(
 def bulk_upload_locations(
     file: UploadFile = File(...),
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(auth.require_roles(["ADMIN"]))
+    current_user: models.User = Depends(auth.require_permission("create_location"))
 ):
     import logging
     

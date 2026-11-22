@@ -28,7 +28,7 @@ def test_user_creation():
             "password": "Password123!",
             "role": "SAFETY OFFICER",
             "department": "Safety",
-            "plant": "HQ",
+            "plant": "PP02",
             "status": "Active"
         }
     )

@@ -219,13 +219,36 @@ def get_roles(
     return create_api_response(True, "Roles retrieved", {"roles": role_names})
 
 
+from ..core.scope import get_user_scope
+
+ROLE_RANKS = {
+    "ADMIN": 100,
+    "IT ADMIN": 80,
+    "SAFETY HEAD": 60,
+    "SAFETY OFFICER": 50,
+    "INSPECTOR": 30,
+    "MAINTENANCE": 30,
+    "VIEWER": 10,
+}
+
+def get_role_rank(role_name: Any) -> int:
+    name_str = role_name.value if hasattr(role_name, "value") else str(role_name or "")
+    return ROLE_RANKS.get(name_str, 0)
+
+
 # ─── User Management (ADMIN / IT ADMIN) ──────────────────────────────────────
 @router.get("/users", response_model=schemas.APIResponse[List[schemas.UserResponse]])
 def list_users(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_users")),
 ):
-    users = db.query(models.User).order_by(models.User.name).all()
+    query = db.query(models.User)
+    scope = get_user_scope(current_user, db)
+    if not scope.is_global:
+        if scope.is_empty:
+            return create_api_response(True, "Users retrieved", [])
+        query = query.filter(models.User.plant.in_(scope.plants))
+    users = query.order_by(models.User.name).all()
     return create_api_response(True, "Users retrieved", users)
 
 
@@ -238,6 +261,46 @@ def create_user(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("create_user")),
 ):
+    creator_rank = get_role_rank(current_user.role)
+    target_rank = get_role_rank(user_data.role)
+
+    # Rank check: Prevent users from creating users with role >= their own rank
+    if target_rank >= creator_rank:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Cannot create user with equal or higher role rank ({user_data.role}) than your own.",
+        )
+
+    # Validate plant against master table & creator scope
+    if user_data.plant:
+        master_plant = (
+            db.query(models.MasterPlant)
+            .filter(models.MasterPlant.name == user_data.plant)
+            .first()
+        )
+        if not master_plant:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid plant '{user_data.plant}'"
+            )
+        scope = get_user_scope(current_user, db)
+        if not scope.is_global and user_data.plant not in (scope.plants or set()):
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot assign user to a plant outside your assigned scope.",
+            )
+
+    # Validate department against master table
+    if user_data.department:
+        master_dept = (
+            db.query(models.MasterDepartment)
+            .filter(models.MasterDepartment.name == user_data.department)
+            .first()
+        )
+        if not master_dept:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid department '{user_data.department}'"
+            )
+
     existing = (
         db.query(models.User)
         .filter(
@@ -251,9 +314,12 @@ def create_user(
             status_code=400, detail="Email or Employee ID already registered"
         )
 
-    valid_role = (
-        db.query(models.Role).filter(models.Role.name == user_data.role).first()
+    role_str = (
+        user_data.role.value
+        if hasattr(user_data.role, "value")
+        else str(user_data.role)
     )
+    valid_role = db.query(models.Role).filter(models.Role.name == role_str).first()
     if not valid_role:
         raise HTTPException(status_code=400, detail="Invalid role specified")
 
@@ -268,13 +334,18 @@ def create_user(
         email=user_data.email,
         password_hash=security.get_password_hash(user_data.password),
         department=user_data.department,
-        role=user_data.role,
+        role=role_str,
         status=user_data.status or "Active",
         plant=user_data.plant,
         is_first_login=True,
         created_at=datetime.utcnow(),
     )
     db.add(new_user)
+    db.flush()
+
+    if user_data.plant:
+        db.add(models.UserPlant(user_id=new_user.id, plant_name=user_data.plant))
+
     db.commit()
     db.refresh(new_user)
 
@@ -295,6 +366,10 @@ def get_user(
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    scope = get_user_scope(current_user, db)
+    if not scope.is_global:
+        if scope.is_empty or (user.plant and user.plant not in (scope.plants or set())):
+            raise HTTPException(status_code=404, detail="User not found")
     return create_api_response(True, "User retrieved", user)
 
 
@@ -312,19 +387,129 @@ def update_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    creator_rank = get_role_rank(current_user.role)
+    target_current_rank = get_role_rank(user.role)
+
+    # Prevent users from editing users with role >= their own rank (unless editing self)
+    if target_current_rank >= creator_rank and user.id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Cannot edit user with equal or higher role rank ({user.role}) than your own.",
+        )
+
+    new_role_str = None
     if user_data.role:
+        new_role_str = (
+            user_data.role.value
+            if hasattr(user_data.role, "value")
+            else str(user_data.role)
+        )
+        # Block non-ADMIN from modifying their own role
+        if current_user.role != "ADMIN" and user.id == current_user.id and new_role_str != user.role:
+            raise HTTPException(status_code=403, detail="Cannot modify your own role.")
+
+        new_rank = get_role_rank(new_role_str)
+        if new_rank >= creator_rank and current_user.role != "ADMIN":
+            raise HTTPException(
+                status_code=403,
+                detail=f"Cannot promote user to equal or higher role rank ({new_role_str}) than your own.",
+            )
+
         valid_role = (
-            db.query(models.Role).filter(models.Role.name == user_data.role).first()
+            db.query(models.Role).filter(models.Role.name == new_role_str).first()
         )
         if not valid_role:
             raise HTTPException(status_code=400, detail="Invalid role specified")
 
-    for key, value in user_data.model_dump(exclude_unset=True).items():
-        setattr(user, key, value)
+    # Prevent deactivating or demoting the last active ADMIN
+    is_demoting_admin = (
+        user.role == "ADMIN" and new_role_str and new_role_str != "ADMIN"
+    )
+    is_deactivating_admin = (
+        user.role == "ADMIN" and user_data.status and user_data.status != "Active"
+    )
+    if is_demoting_admin or is_deactivating_admin:
+        active_admins = (
+            db.query(models.User)
+            .filter(
+                models.User.role == "ADMIN",
+                models.User.status == "Active",
+                models.User.id != user.id,
+            )
+            .count()
+        )
+        if active_admins == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot deactivate or demote the last active Administrator.",
+            )
+
+    # Validate plant
+    if user_data.plant:
+        master_plant = (
+            db.query(models.MasterPlant)
+            .filter(models.MasterPlant.name == user_data.plant)
+            .first()
+        )
+        if not master_plant:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid plant '{user_data.plant}'"
+            )
+        scope = get_user_scope(current_user, db)
+        if not scope.is_global and user_data.plant not in (scope.plants or set()):
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot assign user to a plant outside your assigned scope.",
+            )
+
+    # Validate department
+    if user_data.department:
+        master_dept = (
+            db.query(models.MasterDepartment)
+            .filter(models.MasterDepartment.name == user_data.department)
+            .first()
+        )
+        if not master_dept:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid department '{user_data.department}'"
+            )
+
+    ALLOWED_USER_UPDATE_FIELDS = {
+        "name",
+        "department",
+        "role",
+        "plant",
+        "status",
+    }
+    raw_data = user_data.model_dump(exclude_unset=True)
+
+    role_changed = new_role_str is not None and new_role_str != user.role
+    plant_changed = "plant" in raw_data and raw_data["plant"] != user.plant
+    status_deactivated = (
+        "status" in raw_data
+        and raw_data["status"] != "Active"
+        and user.status == "Active"
+    )
+
+    for key, value in raw_data.items():
+        if key in ALLOWED_USER_UPDATE_FIELDS:
+            if key == "role" and new_role_str:
+                setattr(user, "role", new_role_str)
+            else:
+                setattr(user, key, value)
 
     if user.status == "Active":
         user.locked_until = None
         user.failed_login_attempts = 0
+
+    if plant_changed:
+        db.query(models.UserPlant).filter(models.UserPlant.user_id == user.id).delete()
+        if user.plant:
+            db.add(models.UserPlant(user_id=user.id, plant_name=user.plant))
+
+    # Token invalidation on role change, plant reassignment, or deactivation
+    if role_changed or plant_changed or status_deactivated:
+        auth_service.revoke_all_user_tokens(db, user.id)
 
     db.commit()
     db.refresh(user)
@@ -350,6 +535,30 @@ def delete_user(
             status_code=400, detail="Cannot deactivate your own account"
         )
 
+    creator_rank = get_role_rank(current_user.role)
+    target_rank = get_role_rank(user.role)
+    if target_rank >= creator_rank:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Cannot deactivate a user with equal or higher role rank ({user.role}) than your own.",
+        )
+
+    if user.role == "ADMIN":
+        active_admins = (
+            db.query(models.User)
+            .filter(
+                models.User.role == "ADMIN",
+                models.User.status == "Active",
+                models.User.id != user.id,
+            )
+            .count()
+        )
+        if active_admins == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot deactivate or demote the last active Administrator.",
+            )
+
     user.status = "Inactive"
     auth_service.revoke_all_user_tokens(db, user.id)
     db.commit()
@@ -371,6 +580,14 @@ def reset_user_password(
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    creator_rank = get_role_rank(current_user.role)
+    target_rank = get_role_rank(user.role)
+    if target_rank >= creator_rank and user.id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Cannot reset password for a user with equal or higher role rank ({user.role}) than your own.",
+        )
 
     try:
         user_service.change_user_password(db, user, payload.new_password)

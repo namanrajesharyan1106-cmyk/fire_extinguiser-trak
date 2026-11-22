@@ -25,13 +25,14 @@ class UserBase(BaseModel):
     name: Optional[str] = None
     email: Optional[str] = None
     department: Optional[str] = None
-    role: Optional[str] = None
+    role: Optional[UserRole] = None
     status: Optional[str] = "Active"
     phone: Optional[str] = None
     plant: Optional[str] = None
 
 
 class UserCreate(UserBase):
+    role: UserRole
     password: str
 
     @field_validator("password")

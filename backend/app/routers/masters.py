@@ -60,7 +60,7 @@ def get_active_masters(db: Session = Depends(database.get_db), current_user: mod
 
 # Admin CRUD Endpoints
 @router.get("/admin/{master_type}")
-def get_admin_masters(master_type: str, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.require_roles(["ADMIN"]))):
+def get_admin_masters(master_type: str, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.require_permission("manage_system_config"))):
         
     model_cls = MASTER_MODELS.get(master_type)
     if not model_cls:
@@ -71,7 +71,7 @@ def get_admin_masters(master_type: str, db: Session = Depends(database.get_db), 
 
 
 @router.post("/admin/{master_type}")
-def create_master(master_type: str, payload: MasterCreateUpdate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.require_roles(["ADMIN"]))):
+def create_master(master_type: str, payload: MasterCreateUpdate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.require_permission("manage_system_config"))):
         
     model_cls = MASTER_MODELS.get(master_type)
     if not model_cls:
@@ -89,7 +89,7 @@ def create_master(master_type: str, payload: MasterCreateUpdate, db: Session = D
 
 
 @router.put("/admin/{master_type}/{id}")
-def update_master(master_type: str, id: int, payload: MasterCreateUpdate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.require_roles(["ADMIN"]))):
+def update_master(master_type: str, id: int, payload: MasterCreateUpdate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.require_permission("manage_system_config"))):
         
     model_cls = MASTER_MODELS.get(master_type)
     if not model_cls:
@@ -110,7 +110,7 @@ def update_master(master_type: str, id: int, payload: MasterCreateUpdate, db: Se
 
 
 @router.put("/admin/{master_type}/{id}/toggle-status")
-def toggle_master_status(master_type: str, id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.require_roles(["ADMIN"]))):
+def toggle_master_status(master_type: str, id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.require_permission("manage_system_config"))):
         
     model_cls = MASTER_MODELS.get(master_type)
     if not model_cls:
@@ -126,7 +126,7 @@ def toggle_master_status(master_type: str, id: int, db: Session = Depends(databa
 
 
 @router.get("/admin/{master_type}/bulk-upload/sample")
-def download_sample_excel(master_type: str, current_user: models.User = Depends(auth.require_roles(["ADMIN"]))):
+def download_sample_excel(master_type: str, current_user: models.User = Depends(auth.require_permission("manage_system_config"))):
     """Generate and return a sample Excel file for the given master type."""
     model_cls = MASTER_MODELS.get(master_type)
     if not model_cls:
@@ -192,7 +192,7 @@ def bulk_upload_masters(
     master_type: str, 
     file: UploadFile = File(...),
     db: Session = Depends(database.get_db), 
-    current_user: models.User = Depends(auth.require_roles(["ADMIN"]))
+    current_user: models.User = Depends(auth.require_permission("manage_system_config"))
 ):
     """Process uploaded Excel file and create master records."""
     import base64
