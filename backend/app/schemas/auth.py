@@ -1,18 +1,16 @@
 from datetime import datetime
 from typing import Optional
 
-
 from pydantic import BaseModel, ConfigDict, field_validator
-import re
+
+from .base import APIResponse
+from .user import UserResponse
+
 
 def validate_password(v: str) -> str:
     from ..services.user_service import validate_password_policy
     validate_password_policy(v)
     return v
-
-
-from .base import APIResponse
-from .user import UserResponse
 
 
 class Token(BaseModel):

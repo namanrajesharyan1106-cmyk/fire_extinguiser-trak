@@ -1,16 +1,15 @@
 from datetime import datetime
+from enum import Enum
 from typing import Optional
 
-
 from pydantic import BaseModel, ConfigDict, field_validator
-import re
+
 
 def validate_password(v: str) -> str:
     from ..services.user_service import validate_password_policy
     validate_password_policy(v)
     return v
 
-from enum import Enum
 
 class UserRole(str, Enum):
     ADMIN = "ADMIN"
@@ -32,7 +31,7 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    role: UserRole
+    role: Optional[UserRole] = UserRole.VIEWER
     password: str
 
     @field_validator("password")

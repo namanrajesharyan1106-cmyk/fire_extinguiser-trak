@@ -35,10 +35,10 @@ def get_current_user_dependency():
         )
         try:
             payload = decode_token(token)
-            user_id_str: str = payload.get("sub")
-            token_type: str = payload.get("type", "access")
+            user_id_str = payload.get("sub")
+            token_type = payload.get("type", "access")
 
-            if user_id_str is None or token_type != "access":
+            if not user_id_str or token_type != "access":
                 raise credentials_exception
 
         except JWTError:

@@ -3,7 +3,6 @@ Master Data Management Router
 """
 
 import io
-from typing import List, Dict, Any
 import openpyxl
 from openpyxl.worksheet.datavalidation import DataValidation
 
@@ -15,7 +14,6 @@ from pydantic import BaseModel
 from .. import models
 from ..core import database
 from ..core import dependencies as auth
-from ..schemas.base import APIResponse
 
 router = APIRouter()
 
@@ -52,7 +50,7 @@ def get_active_masters(db: Session = Depends(database.get_db), current_user: mod
     data = {}
     # Fetch active records for all master models
     for key, model_cls in MASTER_MODELS.items():
-        records = db.query(model_cls).filter(model_cls.is_active == True).order_by(model_cls.name).all()
+        records = db.query(model_cls).filter(model_cls.is_active).order_by(model_cls.name).all()
         data[key] = [{"id": r.id, "name": r.name} for r in records]
         
     return {"success": True, "message": "Master data retrieved", "data": data, "errors": None}
@@ -160,7 +158,7 @@ def download_sample_excel(master_type: str, current_user: models.User = Depends(
     dv.promptTitle = "Status Selection"
     ws.add_data_validation(dv)
     # Apply to all rows in column B (from row 2 to 1048576)
-    dv.add(f"B2:B1048576")
+    dv.add("B2:B1048576")
     
     # Make headers bold
     from openpyxl.styles import Font
@@ -212,7 +210,7 @@ def bulk_upload_masters(
             ws = wb["Sample"]
         else:
             ws = wb.active
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=400, detail="Failed to read the Excel file")
         
     rows = list(ws.iter_rows(values_only=True))
@@ -311,7 +309,7 @@ def bulk_upload_masters(
         try:
             db.bulk_save_objects(records_to_insert)
             db.commit()
-        except Exception as e:
+        except Exception:
             db.rollback()
             raise HTTPException(status_code=500, detail="Failed to save records to database")
             

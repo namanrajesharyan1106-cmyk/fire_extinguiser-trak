@@ -43,15 +43,17 @@ def get_user_scope(user: User, db: Session) -> Scope:
         if up.plant_name and up.plant_name.strip():
             plants.add(up.plant_name.strip())
 
-    if getattr(user, "plant", None) and user.plant.strip():
-        plants.add(user.plant.strip())
+    user_plant = getattr(user, "plant", None)
+    if user_plant and str(user_plant).strip():
+        plants.add(str(user_plant).strip())
 
     if user.role == "SAFETY HEAD":
         return Scope(plants=plants, departments=None)
 
     departments: Optional[Set[str]] = None
-    if getattr(user, "department", None) and user.department.strip():
-        departments = {user.department.strip()}
+    user_dept = getattr(user, "department", None)
+    if user_dept and str(user_dept).strip():
+        departments = {str(user_dept).strip()}
 
     return Scope(plants=plants, departments=departments)
 
@@ -67,24 +69,25 @@ def apply_scope(query: Any, user: User, db: Session, model_class: Any) -> Any:
         return query.filter(false())
 
     model_name = getattr(model_class, "__name__", "")
+    allowed_plants = scope.plants or set()
 
     if model_name == "Location":
-        query = query.filter(Location.plant.in_(scope.plants))
+        query = query.filter(Location.plant.in_(allowed_plants))
         if scope.departments:
             query = query.filter(Location.department.in_(scope.departments))
 
     elif model_name == "Asset":
-        query = query.filter(Asset.location.has(Location.plant.in_(scope.plants)))
+        query = query.filter(Asset.location.has(Location.plant.in_(allowed_plants)))
         if scope.departments:
             query = query.filter(Asset.location.has(Location.department.in_(scope.departments)))
 
     elif model_name == "Inspection":
-        query = query.filter(Inspection.location.has(Location.plant.in_(scope.plants)))
+        query = query.filter(Inspection.location.has(Location.plant.in_(allowed_plants)))
         if scope.departments:
             query = query.filter(Inspection.location.has(Location.department.in_(scope.departments)))
 
     elif model_name == "Maintenance":
-        query = query.filter(Maintenance.location.has(Location.plant.in_(scope.plants)))
+        query = query.filter(Maintenance.location.has(Location.plant.in_(allowed_plants)))
         if scope.departments:
             query = query.filter(Maintenance.location.has(Location.department.in_(scope.departments)))
 
@@ -117,7 +120,7 @@ def check_record_scope(record: Any, user: User, db: Session) -> bool:
             rec_plant = loc.plant
             rec_dept = loc.department
 
-    if not rec_plant or rec_plant not in scope.plants:
+    if not rec_plant or (scope.plants is not None and rec_plant not in scope.plants):
         return False
 
     if scope.departments and rec_dept not in scope.departments:
@@ -139,7 +142,7 @@ def validate_plant_param(plant_param: Optional[str], scope: Scope) -> Optional[s
         )
     if plant_param and plant_param.strip():
         cleaned = plant_param.strip()
-        if cleaned not in scope.plants:
+        if scope.plants is not None and cleaned not in scope.plants:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Access denied for plant '{cleaned}'. Not within your assigned scope.",

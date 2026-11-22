@@ -1,11 +1,10 @@
-from typing import Any
 """
 Inspections router — full checklist, auto-status calculation, multi-photo.
 """
 
 import os
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session

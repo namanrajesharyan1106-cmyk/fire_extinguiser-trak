@@ -89,6 +89,7 @@ __all__ = [
     "MaintenanceStatusUpdate",
     "MaintenanceResponse",
     "DashboardStats",
+    "InspectionStatusItem",
     "MonthlyTrendItem",
     "DepartmentStatsItem",
     "RiskStatsItem",

@@ -101,7 +101,7 @@ class AuditLogResponse(BaseModel):
     device: Optional[str] = None
     browser: Optional[str] = None
     status: Optional[str] = None
-    timestamp: datetime
+    timestamp: Optional[datetime] = None
 
 
 class SearchResult(BaseModel):

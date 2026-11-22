@@ -3,11 +3,10 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .system import MasterPlant, MasterDepartment, SystemConfig
 
-import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import Index, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.database import Base
 

@@ -13,6 +13,8 @@ from .. import models, schemas
 from ..core import database
 from ..core import dependencies as auth
 from ..core import security
+from ..core.limiter import limiter
+from ..core.scope import get_user_scope
 from ..services import audit_service, auth_service, user_service
 
 router = APIRouter()
@@ -23,8 +25,6 @@ def create_api_response(
 ) -> dict:
     return {"success": success, "message": message, "data": data, "errors": errors}
 
-
-from ..core.limiter import limiter
 
 @router.post("/login", response_model=schemas.LoginResponse)
 @limiter.limit("10/minute")
@@ -154,7 +154,7 @@ def get_active_sessions(
         db.query(models.RefreshToken)
         .filter(
             models.RefreshToken.user_id == current_user.id,
-            (models.RefreshToken.is_revoked == False) | (models.RefreshToken.is_revoked.is_(None)),
+            models.RefreshToken.is_revoked.is_(False) | models.RefreshToken.is_revoked.is_(None),
             models.RefreshToken.expires_at > now,
         )
         .all()
@@ -189,7 +189,7 @@ def read_users_me(
     perms = get_role_permissions(db, current_user.role)
     scope = get_user_scope(current_user, db)
     if scope.is_global:
-        plants = [p.name for p in db.query(models.MasterPlant).filter(models.MasterPlant.is_active == True).all()]
+        plants = [p.name for p in db.query(models.MasterPlant).filter(models.MasterPlant.is_active).all()]
     else:
         plants = list(scope.plants) if scope.plants else []
 
@@ -232,8 +232,6 @@ def get_roles(
     role_names = [r.name for r in roles]
     return create_api_response(True, "Roles retrieved", {"roles": role_names})
 
-
-from ..core.scope import get_user_scope
 
 ROLE_RANKS = {
     "ADMIN": 100,

@@ -5,9 +5,8 @@ Reports router — all report data endpoints scoped by user permissions and plan
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import false
 
 from .. import models, schemas
 from ..core import database

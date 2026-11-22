@@ -190,7 +190,7 @@ def unlink_asset_from_location(
     asset = asset_repo.get(db, asset_id)
     if not asset:
         return {"error": f"Asset '{asset_id}' not found."}
-    if asset.location_id == False:
+    if not asset.location_id:
         return {"error": f"Asset '{asset_id}' is not assigned to any location."}
 
     old_location_id = asset.location_id

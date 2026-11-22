@@ -41,19 +41,19 @@ class AssetMasterValidator:
     def __init__(self, db: Session):
         self.db = db
         # Active Asset Types
-        asset_types = db.query(models.MasterAssetType).filter(models.MasterAssetType.is_active == True).all()
+        asset_types = db.query(models.MasterAssetType).filter(models.MasterAssetType.is_active).all()
         self.asset_map = {at.name.strip().lower(): at.id for at in asset_types if at.name}
         self.asset_names = [at.name.strip() for at in asset_types if at.name]
         
         # Active Capacities
-        capacities = db.query(models.MasterCapacityType).filter(models.MasterCapacityType.is_active == True).all()
+        capacities = db.query(models.MasterCapacityType).filter(models.MasterCapacityType.is_active).all()
         self.cap_map = {c.name.strip().lower(): c.id for c in capacities if c.name}
         self.cap_names = [c.name.strip() for c in capacities if c.name]
 
         # Locations (map by ID and by Name)
         locations = db.query(models.Location).all()
-        self.location_id_map = {l.location_id.strip().lower(): l for l in locations if l.location_id}
-        self.location_name_map = {l.location_name.strip().lower(): l for l in locations if l.location_name}
+        self.location_id_map = {loc.location_id.strip().lower(): loc for loc in locations if loc.location_id}
+        self.location_name_map = {loc.location_name.strip().lower(): loc for loc in locations if loc.location_name}
 
     def resolve_asset_type(self, val: str):
         if not val or not str(val).strip():
@@ -176,8 +176,8 @@ def download_asset_bulk_upload_sample(
     ws.row_dimensions[1].height = 28
 
     # Fetch active master data for dropdowns
-    active_types = [t.name.strip() for t in db.query(models.MasterAssetType).filter(models.MasterAssetType.is_active == True).all() if t.name]
-    active_caps = [c.name.strip() for c in db.query(models.MasterCapacityType).filter(models.MasterCapacityType.is_active == True).all() if c.name]
+    active_types = [t.name.strip() for t in db.query(models.MasterAssetType).filter(models.MasterAssetType.is_active).all() if t.name]
+    active_caps = [c.name.strip() for c in db.query(models.MasterCapacityType).filter(models.MasterCapacityType.is_active).all() if c.name]
     sample_type = active_types[0] if active_types else "ABC"
     sample_cap = active_caps[0] if active_caps else "6kg"
     second_type = active_types[1] if len(active_types) > 1 else sample_type
@@ -205,20 +205,20 @@ def download_asset_bulk_upload_sample(
         dv_type.error = "Select a valid Asset Type from the active list"
         dv_type.errorTitle = "Invalid Asset Type"
         ws.add_data_validation(dv_type)
-        dv_type.add(f"B2:B500")
+        dv_type.add("B2:B500")
 
     if active_caps:
         dv_cap = DataValidation(type="list", formula1=f'"{",".join(active_caps)}"', allow_blank=True)
         dv_cap.error = "Select a valid Capacity from the active list"
         dv_cap.errorTitle = "Invalid Capacity"
         ws.add_data_validation(dv_cap)
-        dv_cap.add(f"C2:C500")
+        dv_cap.add("C2:C500")
 
     dv_status = DataValidation(type="list", formula1='"Active,Under Maintenance,Expired,Retired,Draft"', allow_blank=True)
     dv_status.error = "Select a valid Status (Active, Under Maintenance, Expired, Retired, Draft)"
     dv_status.errorTitle = "Invalid Status"
     ws.add_data_validation(dv_status)
-    dv_status.add(f"I2:I500")
+    dv_status.add("I2:I500")
 
     # Add Instructions Sheet
     ws_notes = wb.create_sheet(title="Instructions")
@@ -426,7 +426,6 @@ def preview_bulk_upload_assets(
             "location_id": resolved_loc.location_id if resolved_loc else "",
             "remarks": remarks_str,
             "status_code": row_status,
-            "status": row_status,
             "errors": errors
         })
 
@@ -1062,7 +1061,7 @@ def get_compatible_locations(
     current_user: models.User = Depends(auth.require_permission("view_locations")),
 ):
     import logging
-    logger = logging.getLogger(__name__)
+    logging.getLogger(__name__)
 
     asset = db.query(models.Asset).filter(models.Asset.asset_id == asset_id).first()
     if not asset or not check_record_scope(asset, current_user, db):
@@ -1162,13 +1161,13 @@ def get_compatible_locations(
             rejected.append(loc_data)
             
     # Sort compatible locations
-    def sort_key(l):
-        same_plant = 1 if l["plant"] == current_plant and current_plant else 0
-        same_area = 1 if l["area"] == current_area and current_area else 0
+    def sort_key(loc_item):
+        same_plant = 1 if loc_item["plant"] == current_plant and current_plant else 0
+        same_area = 1 if loc_item["area"] == current_area and current_area else 0
         return (
             same_plant,
             same_area,
-            l["remaining_capacity"]
+            loc_item["remaining_capacity"]
         )
         
     compatible.sort(key=sort_key, reverse=True)

@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -72,7 +72,6 @@ class AssetAssignRequest(BaseModel):
     force: Optional[bool] = False
 
 
-from typing import List
 class PaginatedAssetResponse(BaseModel):
     items: List[AssetResponse]
     total: int

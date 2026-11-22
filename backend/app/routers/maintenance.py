@@ -1,4 +1,3 @@
-from typing import Any
 """
 Maintenance router — 8-stage workflow, technician assignment, evidence photos.
 """
@@ -6,7 +5,7 @@ Maintenance router — 8-stage workflow, technician assignment, evidence photos.
 import os
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session

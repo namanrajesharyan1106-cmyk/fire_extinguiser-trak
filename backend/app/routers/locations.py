@@ -76,13 +76,13 @@ class MasterDataService:
     @staticmethod
     def get_active_masters(db: Session):
         return {
-            "plants": [r.name.strip() for r in db.query(models.MasterPlant).filter(models.MasterPlant.is_active == True).order_by(models.MasterPlant.name).all() if r.name and r.name.strip()],
-            "areas": [r.name.strip() for r in db.query(models.MasterArea).filter(models.MasterArea.is_active == True).order_by(models.MasterArea.name).all() if r.name and r.name.strip()],
-            "depts": [r.name.strip() for r in db.query(models.MasterDepartment).filter(models.MasterDepartment.is_active == True).order_by(models.MasterDepartment.name).all() if r.name and r.name.strip()],
-            "buildings": [r.name.strip() for r in db.query(models.MasterBuilding).filter(models.MasterBuilding.is_active == True).order_by(models.MasterBuilding.name).all() if r.name and r.name.strip()],
-            "floors": [r.name.strip() for r in db.query(models.MasterFloor).filter(models.MasterFloor.is_active == True).order_by(models.MasterFloor.name).all() if r.name and r.name.strip()],
-            "assets": [r.name.strip() for r in db.query(models.MasterAssetType).filter(models.MasterAssetType.is_active == True).order_by(models.MasterAssetType.name).all() if r.name and r.name.strip()],
-            "caps": [r.name.strip() for r in db.query(models.MasterCapacityType).filter(models.MasterCapacityType.is_active == True).order_by(models.MasterCapacityType.name).all() if r.name and r.name.strip()]
+            "plants": [r.name.strip() for r in db.query(models.MasterPlant).filter(models.MasterPlant.is_active).order_by(models.MasterPlant.name).all() if r.name and r.name.strip()],
+            "areas": [r.name.strip() for r in db.query(models.MasterArea).filter(models.MasterArea.is_active).order_by(models.MasterArea.name).all() if r.name and r.name.strip()],
+            "depts": [r.name.strip() for r in db.query(models.MasterDepartment).filter(models.MasterDepartment.is_active).order_by(models.MasterDepartment.name).all() if r.name and r.name.strip()],
+            "buildings": [r.name.strip() for r in db.query(models.MasterBuilding).filter(models.MasterBuilding.is_active).order_by(models.MasterBuilding.name).all() if r.name and r.name.strip()],
+            "floors": [r.name.strip() for r in db.query(models.MasterFloor).filter(models.MasterFloor.is_active).order_by(models.MasterFloor.name).all() if r.name and r.name.strip()],
+            "assets": [r.name.strip() for r in db.query(models.MasterAssetType).filter(models.MasterAssetType.is_active).order_by(models.MasterAssetType.name).all() if r.name and r.name.strip()],
+            "caps": [r.name.strip() for r in db.query(models.MasterCapacityType).filter(models.MasterCapacityType.is_active).order_by(models.MasterCapacityType.name).all() if r.name and r.name.strip()]
         }
 
 class LocationMasterValidator:
@@ -94,16 +94,21 @@ class LocationMasterValidator:
         self.buildings = {b.strip().lower() for b in masters["buildings"] if b}
         self.floors = {f.strip().lower() for f in masters["floors"] if f}
         
-        self.asset_map = {r.name.strip().lower(): r.id for r in db.query(models.MasterAssetType).filter(models.MasterAssetType.is_active == True).all() if r.name and r.name.strip()}
-        self.cap_map = {r.name.strip().lower(): r.id for r in db.query(models.MasterCapacityType).filter(models.MasterCapacityType.is_active == True).all() if r.name and r.name.strip()}
+        self.asset_map = {r.name.strip().lower(): r.id for r in db.query(models.MasterAssetType).filter(models.MasterAssetType.is_active).all() if r.name and r.name.strip()}
+        self.cap_map = {r.name.strip().lower(): r.id for r in db.query(models.MasterCapacityType).filter(models.MasterCapacityType.is_active).all() if r.name and r.name.strip()}
         
     def validate_strings(self, plant: Optional[str], area: Optional[str], department: Optional[str], building: Optional[str], floor: Optional[str]) -> list[str]:
         errors = []
-        if plant and plant.strip().lower() not in self.plants: errors.append(f"Invalid Plant '{plant}'")
-        if area and area.strip().lower() not in self.areas: errors.append(f"Invalid Area '{area}'")
-        if department and department.strip().lower() not in self.depts: errors.append(f"Invalid Department '{department}'")
-        if building and building.strip().lower() not in self.buildings: errors.append(f"Invalid Building '{building}'")
-        if floor and floor.strip().lower() not in self.floors: errors.append(f"Invalid Floor '{floor}'")
+        if plant and plant.strip().lower() not in self.plants:
+            errors.append(f"Invalid Plant '{plant}'")
+        if area and area.strip().lower() not in self.areas:
+            errors.append(f"Invalid Area '{area}'")
+        if department and department.strip().lower() not in self.depts:
+            errors.append(f"Invalid Department '{department}'")
+        if building and building.strip().lower() not in self.buildings:
+            errors.append(f"Invalid Building '{building}'")
+        if floor and floor.strip().lower() not in self.floors:
+            errors.append(f"Invalid Floor '{floor}'")
         return errors
         
     def resolve_asset_capacity(self, req_asset: Optional[str], capacity: Optional[str]):
@@ -111,8 +116,10 @@ class LocationMasterValidator:
         asset_id = self.asset_map.get(req_asset.strip().lower()) if req_asset else None
         cap_id = self.cap_map.get(capacity.strip().lower()) if capacity else None
         
-        if req_asset and not asset_id: errors.append(f"Invalid Asset Type '{req_asset}'")
-        if capacity and not cap_id: errors.append(f"Invalid Capacity '{capacity}'")
+        if req_asset and not asset_id:
+            errors.append(f"Invalid Asset Type '{req_asset}'")
+        if capacity and not cap_id:
+            errors.append(f"Invalid Capacity '{capacity}'")
         
         return asset_id, cap_id, errors
 
@@ -123,7 +130,8 @@ def check_and_map_headers(row_headers):
         "Building", "Floor", "Required Asset Type", "Required Capacity", "QR Code Value (Optional)"
     ]
     def norm(h):
-        if not h: return ""
+        if not h:
+            return ""
         h_str = str(h).strip().lower()
         if h_str in ["required asset", "required asset type", "asset type", "asset"]:
             return "required asset type"
@@ -393,14 +401,22 @@ def preview_bulk_upload_locations(
         is_duplicate = False
         
         # Mandatory field validation
-        if not loc_name_str: errors.append("Location Name is required")
-        if not plant_str: errors.append("Plant is required")
-        if not area_str: errors.append("Area is required")
-        if not department_str: errors.append("Department is required")
-        if not building_str: errors.append("Building is required")
-        if not floor_str: errors.append("Floor is required")
-        if not req_asset_str: errors.append("Required Asset Type is required")
-        if not capacity_str: errors.append("Required Capacity is required")
+        if not loc_name_str:
+            errors.append("Location Name is required")
+        if not plant_str:
+            errors.append("Plant is required")
+        if not area_str:
+            errors.append("Area is required")
+        if not department_str:
+            errors.append("Department is required")
+        if not building_str:
+            errors.append("Building is required")
+        if not floor_str:
+            errors.append("Floor is required")
+        if not req_asset_str:
+            errors.append("Required Asset Type is required")
+        if not capacity_str:
+            errors.append("Required Capacity is required")
         
         # Master Data validation
         val_errors = validator.validate_strings(plant_str, area_str, department_str, building_str, floor_str)
@@ -544,14 +560,22 @@ def bulk_upload_locations(
         errors = []
         is_duplicate = False
         
-        if not loc_name: errors.append("Location Name is required")
-        if not plant: errors.append("Plant is required")
-        if not area: errors.append("Area is required")
-        if not department: errors.append("Department is required")
-        if not building: errors.append("Building is required")
-        if not floor: errors.append("Floor is required")
-        if not req_asset: errors.append("Required Asset Type is required")
-        if not capacity: errors.append("Required Capacity is required")
+        if not loc_name:
+            errors.append("Location Name is required")
+        if not plant:
+            errors.append("Plant is required")
+        if not area:
+            errors.append("Area is required")
+        if not department:
+            errors.append("Department is required")
+        if not building:
+            errors.append("Building is required")
+        if not floor:
+            errors.append("Floor is required")
+        if not req_asset:
+            errors.append("Required Asset Type is required")
+        if not capacity:
+            errors.append("Required Capacity is required")
             
         validation_errors = validator.validate_strings(plant, area, department, building, floor)
         errors.extend(validation_errors)
@@ -709,7 +733,6 @@ def create_location(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("create_location")),
 ):
-    import uuid
     import logging
     
     print("\n--- DEBUG Location Creation ---")
@@ -915,7 +938,7 @@ def generate_qr_for_location(
     if not location:
         raise HTTPException(status_code=404, detail="Location not found")
 
-    if location.qr_code == False:
+    if not location.qr_code:
         location.qr_code = location_id
 
     qr_path = generate_qr_code_image(location.qr_code, location_id)
@@ -940,7 +963,7 @@ def get_qr_image(
     if not location:
         raise HTTPException(status_code=404, detail="Location not found")
 
-    if location.qr_image_path == False or os.path == False.exists(
+    if not location.qr_image_path or os.path == False.exists(
         os.path.join(os.path.dirname(settings.UPLOAD_DIR), location.qr_image_path)
     ):
         qr_code_val = location.qr_code or location_id

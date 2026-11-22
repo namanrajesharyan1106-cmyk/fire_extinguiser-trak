@@ -194,7 +194,7 @@ def is_asset_expired(asset) -> bool:
     Check whether extinguisher has expired.
     """
 
-    if asset.expiry_date == False:
+    if not asset.expiry_date:
         return False
 
     return asset.expiry_date < datetime.utcnow().date()
@@ -205,7 +205,7 @@ def is_refill_overdue(asset) -> bool:
     Check refill due date.
     """
 
-    if asset.refill_date == False:
+    if not asset.refill_date:
         return False
 
     return asset.refill_date < datetime.utcnow().date()
