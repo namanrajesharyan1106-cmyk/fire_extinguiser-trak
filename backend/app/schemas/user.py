@@ -6,14 +6,8 @@ from pydantic import BaseModel, ConfigDict, field_validator
 import re
 
 def validate_password(v: str) -> str:
-    if len(v) < 8:
-        raise ValueError("Password must be at least 8 characters long")
-    if not re.search(r"[A-Z]", v):
-        raise ValueError("Password must contain at least one uppercase letter")
-    if not re.search(r"[0-9]", v):
-        raise ValueError("Password must contain at least one number")
-    if not re.search(r"[@$!%*?&#]", v):
-        raise ValueError("Password must contain at least one special character")
+    from ..services.user_service import validate_password_policy
+    validate_password_policy(v)
     return v
 
 from enum import Enum

@@ -24,7 +24,9 @@ def get_current_user_dependency():
     """
 
     def _get_current_user(
-        token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
+        request: Request,
+        token: str = Depends(oauth2_scheme),
+        db: Session = Depends(get_db)
     ):
         credentials_exception = HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -55,6 +57,24 @@ def get_current_user_dependency():
 
         # Security checks: Active, not locked out
         check_account_status(user)
+
+        # First-login enforcement
+        if getattr(user, "is_first_login", False) is True:
+            method = request.method.upper()
+            path = request.url.path.rstrip("/")
+            allowed = [
+                ("POST", "/api/auth/change-password"),
+                ("GET", "/api/auth/me"),
+                ("POST", "/api/auth/logout"),
+            ]
+            if (method, path) not in allowed:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail={
+                        "message": "Password change required before accessing other resources",
+                        "code": "PASSWORD_CHANGE_REQUIRED",
+                    },
+                )
 
         return user
 

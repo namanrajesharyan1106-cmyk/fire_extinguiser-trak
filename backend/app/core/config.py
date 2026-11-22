@@ -86,12 +86,30 @@ class Settings(BaseSettings):
         ]
 
 
+PLACEHOLDER_SECRETS = {
+    "generate_a_secure_random_key_here",
+    "your-secret-key-here",
+    "change-me",
+}
+
+def validate_production_config(cfg: Settings) -> None:
+    if cfg.ENVIRONMENT.lower() == "production":
+        secret = (cfg.SECRET_KEY or "").strip()
+        if not secret or len(secret) < 32 or secret.lower() in PLACEHOLDER_SECRETS:
+            raise ValueError(
+                "In production, SECRET_KEY must be set, at least 32 characters long, and not a placeholder."
+            )
+        admin_pass = (cfg.DEFAULT_ADMIN_PASSWORD or "").strip()
+        if not admin_pass or admin_pass.lower().startswith("change"):
+            raise ValueError(
+                "In production, DEFAULT_ADMIN_PASSWORD must be set and cannot start with 'change'."
+            )
+
 settings = Settings()
 
-if settings.ENVIRONMENT == "production":
-    if settings.SECRET_KEY == False:
-        print("[CRITICAL] SECRET_KEY is not set in production. Refusing to start.")
-        sys.exit(1)
-    if settings.DEFAULT_ADMIN_PASSWORD == False:
-        print("[CRITICAL] DEFAULT_ADMIN_PASSWORD is not set in production. Refusing to start.")
+if settings.ENVIRONMENT.lower() == "production" and "pytest" not in sys.modules:
+    try:
+        validate_production_config(settings)
+    except ValueError as e:
+        print(f"[CRITICAL] {e}")
         sys.exit(1)

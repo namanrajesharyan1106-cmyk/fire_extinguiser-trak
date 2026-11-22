@@ -44,7 +44,7 @@ def login(
         audit_service.log_audit_action(
             db, "LOGIN_FAILED", 0, status="Unknown Email", request=request
         )
-        raise HTTPException(status_code=401, detail="No account was found with this email address.")
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
     try:
         user_service.check_account_status(user)
@@ -59,7 +59,7 @@ def login(
         audit_service.log_audit_action(
             db, "LOGIN_FAILED", user.id, status="Invalid Password", request=request
         )
-        raise HTTPException(status_code=401, detail="The password you entered is incorrect.")
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
     if security.needs_update(user.password_hash):
         user.password_hash = security.get_password_hash(form_data.password)
@@ -88,6 +88,7 @@ def login(
 
 
 @router.post("/refresh", response_model=schemas.APIResponse[schemas.Token])
+@limiter.limit("5/minute")
 def refresh_token(
     request: Request,
     payload: schemas.TokenRefresh,
@@ -185,6 +186,7 @@ def read_users_me(current_user: models.User = Depends(auth.get_current_user)):
 
 
 @router.post("/change-password", response_model=schemas.APIResponse)
+@limiter.limit("5/minute")
 def change_password(
     request: Request,
     payload: schemas.ChangePasswordRequest,
