@@ -1,5 +1,6 @@
 import json
 import os
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -43,7 +44,7 @@ def generate_qr_code_image(data: str, location_id: str) -> str:
 
     img = qr.make_image(fill_color="black", back_color="white")
 
-    filename = f"qr_{location_id}.png"
+    filename = f"{uuid.uuid4().hex}.png"
     filepath = os.path.join(UPLOAD_DIR, "qr", filename)
 
     with open(filepath, "wb") as f:

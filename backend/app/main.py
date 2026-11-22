@@ -41,6 +41,7 @@ from .routers import (
     reports,
     search,
     masters,
+    files,
 )
 
 # ─── Create all DB tables ─────────────────────────────────────────────────────
@@ -116,9 +117,6 @@ async def log_requests(request: Request, call_next):
         process_time = time.time() - start_time
         logger.error(f"Failed {request.method} {request.url.path} in {process_time:.4f}s")
         raise e
-
-# ─── Static Files (for serving uploaded images & QR codes) ───────────────────
-app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 
 
 # ─── Exception Handlers ───────────────────────────────────────────────────────
@@ -200,6 +198,7 @@ app.include_router(search.router, prefix="/api/search", tags=["Search"])
 app.include_router(health.router, prefix="/health", tags=["Health"])
 app.include_router(health.router, prefix="/api/health", tags=["Health"])
 app.include_router(masters.router, prefix="/api/masters", tags=["Masters"])
+app.include_router(files.router, prefix="/api/files", tags=["Files"])
 
 
 

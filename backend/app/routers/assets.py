@@ -1212,7 +1212,7 @@ async def upload_asset_photo(
     sanitized_bytes, ext, _ = await validate_and_sanitize_image(file)
 
     import uuid
-    filename = f"asset_{asset_id}_{uuid.uuid4().hex[:8]}{ext}"
+    filename = f"{uuid.uuid4().hex}{ext}"
     save_path = os.path.join(settings.UPLOAD_DIR, "photos", filename)
     with open(save_path, "wb") as f:
         f.write(sanitized_bytes)
