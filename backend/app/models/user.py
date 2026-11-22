@@ -11,10 +11,25 @@ if TYPE_CHECKING:
 import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Index, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..core.database import Base
+
+
+class UserPlant(Base):
+    __tablename__ = "user_plants"
+    __table_args__ = (
+        Index("ix_user_plants_id", "id"),
+        Index("ix_user_plants_user_id", "user_id"),
+        Index("ix_user_plants_plant_name", "plant_name"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    plant_name: Mapped[str] = mapped_column(String)
+
+    user: Mapped["User"] = relationship("User", back_populates="user_plants")
 
 
 class User(Base):
@@ -66,4 +81,7 @@ class User(Base):
     )
     maintenance: Mapped[list["Maintenance"]] = relationship(
         "Maintenance", back_populates="technician"
+    )
+    user_plants: Mapped[list["UserPlant"]] = relationship(
+        "UserPlant", back_populates="user", cascade="all, delete-orphan"
     )

@@ -136,28 +136,20 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
+    message = exc.detail if not isinstance(exc.detail, dict) else exc.detail.get("message", str(exc.detail))
+    content = {
+        "success": False,
+        "message": message,
+        "data": None,
+        "errors": {"status_code": exc.status_code, "path": str(request.url)},
+    }
     if isinstance(exc.detail, dict):
-        content = {
-            "success": False,
-            "message": exc.detail.get("message", "An error occurred"),
-            "data": exc.detail.get("data", None),
-            "errors": exc.detail.get("errors", {"status_code": exc.status_code, "path": str(request.url)}),
-        }
         for k, v in exc.detail.items():
             if k not in content:
                 content[k] = v
-        return JSONResponse(
-            status_code=exc.status_code,
-            content=content,
-        )
     return JSONResponse(
         status_code=exc.status_code,
-        content={
-            "success": False,
-            "message": exc.detail,
-            "data": None,
-            "errors": {"status_code": exc.status_code, "path": str(request.url)},
-        },
+        content=content,
     )
 
 
@@ -205,8 +197,8 @@ app.include_router(
     notifications.router, prefix="/api/notifications", tags=["Notifications"]
 )
 app.include_router(search.router, prefix="/api/search", tags=["Search"])
-app.include_router(health.router, prefix="/api/health", tags=["Health"])
 app.include_router(health.router, prefix="/health", tags=["Health"])
+app.include_router(health.router, prefix="/api/health", tags=["Health"])
 app.include_router(masters.router, prefix="/api/masters", tags=["Masters"])
 
 

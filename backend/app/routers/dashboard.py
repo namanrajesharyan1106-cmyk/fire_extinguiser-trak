@@ -1,9 +1,9 @@
-from typing import Any, List, Optional
 """
 Dashboard router — live KPIs, trends, department/risk breakdowns.
 """
 
 from datetime import datetime, timedelta
+from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import extract, func, exists
@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..core import database
 from ..core import dependencies as auth
+from ..core.scope import apply_scope
 
 router = APIRouter()
 
@@ -56,16 +57,14 @@ def get_dashboard_stats(
         except ValueError:
             pass
 
-    # Master inventory counts — preserved as master totals per requirements
-    total_locations = (
-        db.query(models.Location).filter(models.Location.status == "Active").count()
-    )
-    total_assets = db.query(models.Asset).count()
-    installed_assets = (
-        db.query(models.Asset)
-        .filter(models.Asset.location_id.is_not(None))
-        .count()
-    )
+    # Scoped base queries
+    scoped_locations = apply_scope(db.query(models.Location), current_user, db, models.Location)
+    scoped_assets = apply_scope(db.query(models.Asset), current_user, db, models.Asset)
+
+    # Master inventory counts — preserved as master totals per requirements (scoped by plant)
+    total_locations = scoped_locations.filter(models.Location.status == "Active").count()
+    total_assets = scoped_assets.count()
+    installed_assets = scoped_assets.filter(models.Asset.location_id.is_not(None)).count()
     unassigned_assets = total_assets - installed_assets
 
     # Inspections count: if date range provided, count within range; otherwise count completed today
@@ -73,8 +72,10 @@ def get_dashboard_stats(
     inspections_passed = None
     inspections_failed = None
 
+    base_insp = apply_scope(db.query(models.Inspection), current_user, db, models.Inspection)
+
     if start_dt and end_dt:
-        insp_query = db.query(models.Inspection).filter(
+        insp_query = base_insp.filter(
             models.Inspection.inspection_date >= start_dt,
             models.Inspection.inspection_date <= end_dt,
         )
@@ -83,7 +84,7 @@ def get_dashboard_stats(
         inspections_passed = insp_query.filter(models.Inspection.overall_status == "Pass").count()
         inspections_failed = insp_query.filter(models.Inspection.overall_status == "Fail").count()
     elif start_dt:
-        insp_query = db.query(models.Inspection).filter(
+        insp_query = base_insp.filter(
             models.Inspection.inspection_date >= start_dt
         )
         inspections_in_range = insp_query.count()
@@ -91,7 +92,7 @@ def get_dashboard_stats(
         inspections_passed = insp_query.filter(models.Inspection.overall_status == "Pass").count()
         inspections_failed = insp_query.filter(models.Inspection.overall_status == "Fail").count()
     elif end_dt:
-        insp_query = db.query(models.Inspection).filter(
+        insp_query = base_insp.filter(
             models.Inspection.inspection_date <= end_dt
         )
         inspections_in_range = insp_query.count()
@@ -100,16 +101,17 @@ def get_dashboard_stats(
         inspections_failed = insp_query.filter(models.Inspection.overall_status == "Fail").count()
     else:
         inspection_completed_today = (
-            db.query(models.Inspection)
+            base_insp
             .filter(func.date(models.Inspection.inspection_date) == today_date)
             .count()
         )
 
     # Maintenance in range
+    base_maint = apply_scope(db.query(models.Maintenance), current_user, db, models.Maintenance)
     maintenance_in_range = None
     if start_dt and end_dt:
         maintenance_in_range = (
-            db.query(models.Maintenance)
+            base_maint
             .filter(
                 models.Maintenance.opened_date >= start_dt,
                 models.Maintenance.opened_date <= end_dt,
@@ -121,7 +123,7 @@ def get_dashboard_stats(
     inspection_due_today = 0
     overdue_inspections = 0
     active_locations = (
-        db.query(models.Location)
+        scoped_locations
         .filter(
             models.Location.status == "Active",
             models.Location.inspection_frequency.is_not(None),
@@ -142,7 +144,7 @@ def get_dashboard_stats(
                 overdue_inspections += 1
 
     # Open maintenance tickets (not closed or verified; if end_date given, opened on or before end_date)
-    open_maint_query = db.query(models.Maintenance).filter(
+    open_maint_query = base_maint.filter(
         models.Maintenance.status.notin_(["Closed", "Verified"])
     )
     if end_dt:
@@ -153,7 +155,7 @@ def get_dashboard_stats(
 
     # Expired assets as of target date
     expired_assets = (
-        db.query(models.Asset)
+        scoped_assets
         .filter(
             models.Asset.expiry_date <= as_of_date,
             models.Asset.status == "Active",
@@ -163,7 +165,7 @@ def get_dashboard_stats(
 
     # Refill due as of target date
     refill_due = (
-        db.query(models.Asset)
+        scoped_assets
         .filter(
             models.Asset.refill_date <= as_of_date,
             models.Asset.status == "Active",
@@ -173,7 +175,7 @@ def get_dashboard_stats(
 
     # Locations that have an asset currently assigned
     locations_with_assets = (
-        db.query(models.Location)
+        scoped_locations
         .filter(
             models.Location.status == "Active",
             exists().where(
@@ -237,13 +239,15 @@ def get_monthly_trend(
             if not month_targets:
                 month_targets = [s_dt.replace(day=1)]
 
+            base_insp = apply_scope(db.query(models.Inspection), current_user, db, models.Inspection)
+            base_maint = apply_scope(db.query(models.Maintenance), current_user, db, models.Maintenance)
+
             for target in month_targets:
                 year = target.year
                 month = target.month
 
                 inspections = (
-                    db.query(models.Inspection)
-                    .filter(
+                    base_insp.filter(
                         extract("year", models.Inspection.inspection_date) == year,
                         extract("month", models.Inspection.inspection_date) == month,
                     )
@@ -251,8 +255,7 @@ def get_monthly_trend(
                 )
 
                 passed = (
-                    db.query(models.Inspection)
-                    .filter(
+                    base_insp.filter(
                         extract("year", models.Inspection.inspection_date) == year,
                         extract("month", models.Inspection.inspection_date) == month,
                         models.Inspection.overall_status == "Pass",
@@ -261,8 +264,7 @@ def get_monthly_trend(
                 )
 
                 failed = (
-                    db.query(models.Inspection)
-                    .filter(
+                    base_insp.filter(
                         extract("year", models.Inspection.inspection_date) == year,
                         extract("month", models.Inspection.inspection_date) == month,
                         models.Inspection.overall_status == "Fail",
@@ -271,8 +273,7 @@ def get_monthly_trend(
                 )
 
                 maintenance = (
-                    db.query(models.Maintenance)
-                    .filter(
+                    base_maint.filter(
                         extract("year", models.Maintenance.opened_date) == year,
                         extract("month", models.Maintenance.opened_date) == month,
                     )
@@ -294,14 +295,16 @@ def get_monthly_trend(
             pass  # Fallback to default month calculation if any parsing fails
 
     # Default calculation: past `months` months ending today
+    base_insp = apply_scope(db.query(models.Inspection), current_user, db, models.Inspection)
+    base_maint = apply_scope(db.query(models.Maintenance), current_user, db, models.Maintenance)
+
     for i in range(months - 1, -1, -1):
         target = today.replace(day=1) - timedelta(days=i * 28)
         year = target.year
         month = target.month
 
         inspections = (
-            db.query(models.Inspection)
-            .filter(
+            base_insp.filter(
                 extract("year", models.Inspection.inspection_date) == year,
                 extract("month", models.Inspection.inspection_date) == month,
             )
@@ -309,8 +312,7 @@ def get_monthly_trend(
         )
 
         passed = (
-            db.query(models.Inspection)
-            .filter(
+            base_insp.filter(
                 extract("year", models.Inspection.inspection_date) == year,
                 extract("month", models.Inspection.inspection_date) == month,
                 models.Inspection.overall_status == "Pass",
@@ -319,8 +321,7 @@ def get_monthly_trend(
         )
 
         failed = (
-            db.query(models.Inspection)
-            .filter(
+            base_insp.filter(
                 extract("year", models.Inspection.inspection_date) == year,
                 extract("month", models.Inspection.inspection_date) == month,
                 models.Inspection.overall_status == "Fail",
@@ -329,8 +330,7 @@ def get_monthly_trend(
         )
 
         maintenance = (
-            db.query(models.Maintenance)
-            .filter(
+            base_maint.filter(
                 extract("year", models.Maintenance.opened_date) == year,
                 extract("month", models.Maintenance.opened_date) == month,
             )
@@ -355,14 +355,15 @@ def get_department_stats(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_dashboard")),
 ):
-    departments = db.query(models.Location.department).distinct().all()
+    scoped_locs = apply_scope(db.query(models.Location), current_user, db, models.Location)
+    departments = scoped_locs.with_entities(models.Location.department).distinct().all()
     result = []
 
     for (dept,) in departments:
         if not dept:
             continue
         total = (
-            db.query(models.Location)
+            scoped_locs
             .filter(
                 models.Location.department == dept,
                 models.Location.status == "Active",
@@ -370,7 +371,7 @@ def get_department_stats(
             .count()
         )
         installed = (
-            db.query(models.Location)
+            scoped_locs
             .filter(
                 models.Location.department == dept,
                 models.Location.status == "Active",
@@ -401,10 +402,11 @@ def get_risk_stats(
 ):
     from ..core.constants import RISK_CATEGORIES
 
+    scoped_locs = apply_scope(db.query(models.Location), current_user, db, models.Location)
     result = []
     for category in RISK_CATEGORIES:
         count = (
-            db.query(models.Location)
+            scoped_locs
             .filter(
                 models.Location.risk_category == category,
                 models.Location.status == "Active",
@@ -448,13 +450,14 @@ def get_plant_stats(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_dashboard")),
 ):
-    plants = db.query(models.Location.plant).distinct().all()
+    scoped_locs = apply_scope(db.query(models.Location), current_user, db, models.Location)
+    plants = scoped_locs.with_entities(models.Location.plant).distinct().all()
     result = []
     for (plant,) in plants:
         if not plant:
             continue
         total = (
-            db.query(models.Location)
+            scoped_locs
             .filter(
                 models.Location.plant == plant,
                 models.Location.status == "Active",
@@ -462,7 +465,7 @@ def get_plant_stats(
             .count()
         )
         installed = (
-            db.query(models.Location)
+            scoped_locs
             .filter(
                 models.Location.plant == plant,
                 models.Location.status == "Active",
@@ -488,11 +491,14 @@ def get_asset_type_distribution(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_dashboard")),
 ):
+    base_assets = apply_scope(db.query(models.Asset), current_user, db, models.Asset)
     types = (
-        db.query(
-            models.Asset.asset_type, func.count(models.Asset.asset_id).label("count")
+        base_assets.outerjoin(models.MasterAssetType, models.Asset.asset_type_id == models.MasterAssetType.id)
+        .with_entities(
+            func.coalesce(models.MasterAssetType.name, "Other").label("asset_type"),
+            func.count(models.Asset.asset_id).label("count"),
         )
-        .group_by(models.Asset.asset_type)
+        .group_by(func.coalesce(models.MasterAssetType.name, "Other"))
         .all()
     )
 
@@ -506,7 +512,8 @@ def get_inspection_status_distribution(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_dashboard")),
 ):
-    query = db.query(
+    base = apply_scope(db.query(models.Inspection), current_user, db, models.Inspection)
+    query = base.with_entities(
         models.Inspection.overall_status,
         func.count(models.Inspection.inspection_id).label("count")
     )
@@ -535,8 +542,9 @@ def get_overdue_inspections(
 ):
     today = datetime.utcnow()
     overdue_list = []
+    scoped_locs = apply_scope(db.query(models.Location), current_user, db, models.Location)
     locations = (
-        db.query(models.Location)
+        scoped_locs
         .filter(
             models.Location.status == "Active",
             models.Location.inspection_frequency.is_not(None),
@@ -580,7 +588,7 @@ def get_recent_maintenance(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_dashboard")),
 ):
-    query = db.query(models.Maintenance)
+    query = apply_scope(db.query(models.Maintenance), current_user, db, models.Maintenance)
     if start_date:
         try:
             start_dt = datetime.strptime(start_date, "%Y-%m-%d")

@@ -17,7 +17,7 @@ from .system import (
     MasterAssetType, MasterCapacityType, 
     MasterRiskCategory, MasterInspectionFrequency
 )
-from .user import User
+from .user import User, UserPlant
 
 __all__ = [
     "Base",
@@ -25,6 +25,7 @@ __all__ = [
     "Permission",
     "role_permissions",
     "User",
+    "UserPlant",
     "RefreshToken",
     "PasswordHistory",
     "MasterPlant",

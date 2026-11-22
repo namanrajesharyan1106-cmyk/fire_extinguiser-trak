@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..core import database
 from ..core import dependencies as auth
+from ..core.scope import apply_scope
 from .auth import create_api_response
 
 router = APIRouter()
@@ -27,7 +28,7 @@ def global_search(
 
     # ── Assets ────────────────────────────────────────────────────────────────
     assets = (
-        db.query(models.Asset)
+        apply_scope(db.query(models.Asset), current_user, db, models.Asset)
         .filter(
             (models.Asset.asset_id.ilike(search_term))
             | (models.Asset.serial_number.ilike(search_term))
@@ -52,7 +53,7 @@ def global_search(
 
     # ── Locations ─────────────────────────────────────────────────────────────
     locations = (
-        db.query(models.Location)
+        apply_scope(db.query(models.Location), current_user, db, models.Location)
         .filter(
             (models.Location.location_id.ilike(search_term))
             | (models.Location.location_name.ilike(search_term))
@@ -81,7 +82,7 @@ def global_search(
 
     # ── Maintenance ───────────────────────────────────────────────────────────
     maintenance = (
-        db.query(models.Maintenance)
+        apply_scope(db.query(models.Maintenance), current_user, db, models.Maintenance)
         .filter(
             (models.Maintenance.issue.ilike(search_term))
             | (models.Maintenance.asset_id.ilike(search_term))

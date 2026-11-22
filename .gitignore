@@ -6,10 +6,10 @@
 
 # Databases and Backups
 *.db
+*.db.*
 *.db-journal
 *.db.bak
 *.db.backup*
-*.db.*
 *.bak
 
 # Uploads

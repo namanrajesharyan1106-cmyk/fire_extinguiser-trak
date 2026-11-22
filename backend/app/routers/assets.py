@@ -26,6 +26,7 @@ from ..services.asset_service import (
 )
 from ..utils import create_audit_log, generate_qr_code_image, model_to_dict
 from .locations import generate_system_id
+from ..core.scope import apply_scope, check_record_scope, get_user_scope
 
 router = APIRouter()
 
@@ -767,13 +768,13 @@ def get_assets(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_assets")),
 ):
-    query = db.query(models.Asset)
+    query = apply_scope(db.query(models.Asset), current_user, db, models.Asset)
     if asset_type:
         query = query.filter(models.Asset.asset_type == asset_type)
     if status:
         query = query.filter(models.Asset.status == status)
     if unassigned_only:
-        query = query.filter(models.Asset.location_id is None)
+        query = query.filter(models.Asset.location_id.is_(None))
     
     items = query.order_by(models.Asset.asset_id).offset(skip).limit(limit).all()
     total = query.count()
@@ -787,7 +788,7 @@ def get_asset(
     current_user: models.User = Depends(auth.require_permission("view_assets")),
 ):
     asset = db.query(models.Asset).filter(models.Asset.asset_id == asset_id).first()
-    if not asset:
+    if not asset or not check_record_scope(asset, current_user, db):
         raise HTTPException(status_code=404, detail="Asset not found")
     return create_api_response(True, "Asset retrieved", asset)
 
@@ -811,7 +812,7 @@ def get_asset_by_qr(
         )
         .first()
     )
-    if not asset:
+    if not asset or not check_record_scope(asset, current_user, db):
         raise HTTPException(status_code=404, detail=f"No asset found for QR '{qr_code}'")
 
     location = None
@@ -904,7 +905,7 @@ def update_asset(
     current_user: models.User = Depends(auth.require_permission("edit_asset")),
 ):
     db_asset = db.query(models.Asset).filter(models.Asset.asset_id == asset_id).first()
-    if not db_asset:
+    if not db_asset or not check_record_scope(db_asset, current_user, db):
         raise HTTPException(status_code=404, detail="Asset not found")
 
     old_values = model_to_dict(db_asset)
@@ -935,7 +936,7 @@ def delete_asset(
     current_user: models.User = Depends(auth.require_permission("delete_asset")),
 ):
     db_asset = db.query(models.Asset).filter(models.Asset.asset_id == asset_id).first()
-    if not db_asset:
+    if not db_asset or not check_record_scope(db_asset, current_user, db):
         raise HTTPException(status_code=404, detail="Asset not found")
     if db_asset.current_location_id:
         raise HTTPException(
@@ -973,6 +974,14 @@ def link_asset_to_location(
     Assign asset to location with full validation.
     Raises detailed errors for mismatches, expired status, open tickets, etc.
     """
+    asset_check = db.query(models.Asset).filter(models.Asset.asset_id == asset_id).first()
+    if not asset_check or not check_record_scope(asset_check, current_user, db):
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    loc_check = db.query(models.Location).filter(models.Location.location_id == location_id).first()
+    if not loc_check or not check_record_scope(loc_check, current_user, db):
+        raise HTTPException(status_code=404, detail="Location not found")
+
     if payload is None:
         payload = schemas.AssetAssignRequest()
 
@@ -1027,6 +1036,10 @@ def unlink_asset(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("assign_asset")),
 ):
+    asset_check = db.query(models.Asset).filter(models.Asset.asset_id == asset_id).first()
+    if not asset_check or not check_record_scope(asset_check, current_user, db):
+        raise HTTPException(status_code=404, detail="Asset not found")
+
     result = unlink_asset_from_location(
         db, asset_id, current_user.email, reason, movement_type
     )
@@ -1047,11 +1060,14 @@ def get_compatible_locations(
     logger = logging.getLogger(__name__)
 
     asset = db.query(models.Asset).filter(models.Asset.asset_id == asset_id).first()
-    if not asset:
+    if not asset or not check_record_scope(asset, current_user, db):
         raise HTTPException(status_code=404, detail="Asset not found")
         
-    locations = db.query(models.Location).filter(
-        models.Location.status != "Inactive"
+    locations = apply_scope(
+        db.query(models.Location).filter(models.Location.status != "Inactive"),
+        current_user,
+        db,
+        models.Location
     ).all()
     
     current_plant = asset.location.plant if asset.location else ""

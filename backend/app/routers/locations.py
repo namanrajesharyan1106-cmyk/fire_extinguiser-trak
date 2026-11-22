@@ -16,6 +16,7 @@ from ..core import database
 from ..core import dependencies as auth
 from ..schemas.base import APIResponse
 from ..utils import create_audit_log, generate_qr_code_image
+from ..core.scope import apply_scope, check_record_scope, get_user_scope
 import io
 import base64
 from fastapi import UploadFile, File
@@ -154,7 +155,7 @@ def get_locations(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_locations")),
 ):
-    query = db.query(models.Location)
+    query = apply_scope(db.query(models.Location), current_user, db, models.Location)
 
     if search:
         search_term = f"%{search}%"
@@ -679,7 +680,7 @@ def get_location_by_qr(
     location = (
         db.query(models.Location).filter(models.Location.qr_code == qr_value).first()
     )
-    if not location:
+    if not location or not check_record_scope(location, current_user, db):
         raise HTTPException(
             status_code=404, detail=f"No location found for QR code: '{qr_value}'"
         )
@@ -697,7 +698,7 @@ def get_location(
         .filter(models.Location.location_id == location_id)
         .first()
     )
-    if not location:
+    if not location or not check_record_scope(location, current_user, db):
         raise HTTPException(status_code=404, detail="Location not found")
     return create_api_response(True, "Location retrieved", location)
 
@@ -726,6 +727,14 @@ def create_location(
         raise HTTPException(status_code=400, detail="Invalid Required Asset Type ID")
     if location.required_capacity_id not in validator.cap_map.values():
         raise HTTPException(status_code=400, detail="Invalid Required Capacity ID")
+
+    scope = get_user_scope(current_user, db)
+    if not scope.is_global:
+        if scope.is_empty or (location.plant and location.plant not in scope.plants):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Access denied. Cannot create location for plant '{location.plant}' outside your assigned scope."
+            )
 
     # Auto-generate location_id if not provided by client
     location_id = location.location_id or generate_system_id(db, "location", location.plant)
@@ -813,7 +822,7 @@ def update_location(
         .filter(models.Location.location_id == location_id)
         .first()
     )
-    if not db_location:
+    if not db_location or not check_record_scope(db_location, current_user, db):
         raise HTTPException(status_code=404, detail="Location not found")
         
     validator = LocationMasterValidator(db)
@@ -867,7 +876,7 @@ def delete_location(
         .filter(models.Location.location_id == location_id)
         .first()
     )
-    if not db_location:
+    if not db_location or not check_record_scope(db_location, current_user, db):
         raise HTTPException(status_code=404, detail="Location not found")
 
     # Safe Delete: Prevent deletion if an asset is currently assigned

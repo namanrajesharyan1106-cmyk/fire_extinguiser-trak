@@ -1,16 +1,18 @@
 """
-Reports router — all report data endpoints (frontend will handle PDF/Excel export).
+Reports router — all report data endpoints scoped by user permissions and plant.
 """
 
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import false
 
 from .. import models, schemas
 from ..core import database
 from ..core import dependencies as auth
+from ..core.scope import get_user_scope, validate_plant_param
 from .auth import create_api_response
 
 router = APIRouter()
@@ -25,9 +27,25 @@ def asset_register(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_reports")),
 ):
-    query = db.query(models.Asset, models.Location).outerjoin(models.Location, models.Asset.location_id == models.Location.location_id)
-    if plant:
+    scope = get_user_scope(current_user, db)
+    plant = validate_plant_param(plant, scope)
+
+    query = db.query(models.Asset, models.Location).outerjoin(
+        models.Location, models.Asset.location_id == models.Location.location_id
+    )
+
+    if not scope.is_global:
+        if scope.is_empty:
+            return create_api_response(True, "Report generated successfully", {"count": 0, "data": []})
+        if plant:
+            query = query.filter(models.Location.plant == plant)
+        else:
+            query = query.filter(models.Location.plant.in_(scope.plants))
+        if scope.departments:
+            query = query.filter(models.Location.department.in_(scope.departments))
+    elif plant:
         query = query.filter(models.Location.plant == plant)
+
     if asset_type:
         query = query.filter(models.Asset.asset_type == asset_type)
     if status:
@@ -74,20 +92,35 @@ def asset_register(
 
 @router.get("/expired-assets")
 def expired_assets_report(
+    plant: Optional[str] = None,
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_reports")),
 ):
+    scope = get_user_scope(current_user, db)
+    plant = validate_plant_param(plant, scope)
+
     today = datetime.utcnow().date()
-    assets = db.query(models.Asset).filter(models.Asset.expiry_date <= today).all()
+    query = (
+        db.query(models.Asset, models.Location)
+        .join(models.Location, models.Asset.location_id == models.Location.location_id)
+        .filter(models.Asset.expiry_date <= today)
+    )
+
+    if not scope.is_global:
+        if scope.is_empty:
+            return create_api_response(True, "Report generated successfully", {"count": 0, "data": []})
+        if plant:
+            query = query.filter(models.Location.plant == plant)
+        else:
+            query = query.filter(models.Location.plant.in_(scope.plants))
+        if scope.departments:
+            query = query.filter(models.Location.department.in_(scope.departments))
+    elif plant:
+        query = query.filter(models.Location.plant == plant)
+
+    records = query.all()
     result = []
-    for asset in assets:
-        loc = None
-        if asset.current_location_id:
-            loc = (
-                db.query(models.Location)
-                .filter(models.Location.location_id == asset.current_location_id)
-                .first()
-            )
+    for asset, loc in records:
         days_expired = (today - asset.expiry_date).days if asset.expiry_date else 0
         result.append(
             {
@@ -100,6 +133,7 @@ def expired_assets_report(
                 "days_expired": days_expired,
                 "location": loc.location_name if loc else "Unassigned",
                 "department": loc.department if loc else None,
+                "plant": loc.plant if loc else None,
             }
         )
     return create_api_response(True, "Report generated successfully", {"count": len(result), "data": result})
@@ -107,29 +141,40 @@ def expired_assets_report(
 
 @router.get("/refill-due")
 def refill_due_report(
+    plant: Optional[str] = None,
     days_ahead: int = 30,
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_reports")),
 ):
+    scope = get_user_scope(current_user, db)
+    plant = validate_plant_param(plant, scope)
+
     today = datetime.utcnow().date()
     cutoff = today + timedelta(days=days_ahead)
-    assets = (
-        db.query(models.Asset)
+    query = (
+        db.query(models.Asset, models.Location)
+        .join(models.Location, models.Asset.location_id == models.Location.location_id)
         .filter(
             models.Asset.refill_date <= cutoff,
             models.Asset.status == "Active",
         )
-        .all()
     )
+
+    if not scope.is_global:
+        if scope.is_empty:
+            return create_api_response(True, "Report generated successfully", {"count": 0, "data": []})
+        if plant:
+            query = query.filter(models.Location.plant == plant)
+        else:
+            query = query.filter(models.Location.plant.in_(scope.plants))
+        if scope.departments:
+            query = query.filter(models.Location.department.in_(scope.departments))
+    elif plant:
+        query = query.filter(models.Location.plant == plant)
+
+    records = query.all()
     result = []
-    for asset in assets:
-        loc = None
-        if asset.current_location_id:
-            loc = (
-                db.query(models.Location)
-                .filter(models.Location.location_id == asset.current_location_id)
-                .first()
-            )
+    for asset, loc in records:
         days_diff = (asset.refill_date - today).days if asset.refill_date else 0
         result.append(
             {
@@ -141,6 +186,7 @@ def refill_due_report(
                 "status": "Overdue" if days_diff < 0 else f"Due in {days_diff} days",
                 "location": loc.location_name if loc else "Unassigned",
                 "department": loc.department if loc else None,
+                "plant": loc.plant if loc else None,
             }
         )
     return create_api_response(True, "Report generated successfully", {"count": len(result), "data": result})
@@ -148,6 +194,7 @@ def refill_due_report(
 
 @router.get("/inspection-history")
 def inspection_history_report(
+    plant: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     location_id: Optional[str] = None,
@@ -156,7 +203,25 @@ def inspection_history_report(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_reports")),
 ):
-    query = db.query(models.Inspection)
+    scope = get_user_scope(current_user, db)
+    plant = validate_plant_param(plant, scope)
+
+    query = db.query(models.Inspection, models.Location).join(
+        models.Location, models.Inspection.location_id == models.Location.location_id
+    )
+
+    if not scope.is_global:
+        if scope.is_empty:
+            return create_api_response(True, "Report generated successfully", {"count": 0, "data": []})
+        if plant:
+            query = query.filter(models.Location.plant == plant)
+        else:
+            query = query.filter(models.Location.plant.in_(scope.plants))
+        if scope.departments:
+            query = query.filter(models.Location.department.in_(scope.departments))
+    elif plant:
+        query = query.filter(models.Location.plant == plant)
+
     if start_date:
         query = query.filter(
             models.Inspection.inspection_date
@@ -176,12 +241,7 @@ def inspection_history_report(
         query.order_by(models.Inspection.inspection_date.desc()).limit(limit).all()
     )
     result = []
-    for insp in inspections:
-        loc = (
-            db.query(models.Location)
-            .filter(models.Location.location_id == insp.location_id)
-            .first()
-        )
+    for insp, loc in inspections:
         result.append(
             {
                 "inspection_id": insp.inspection_id,
@@ -207,30 +267,41 @@ def inspection_history_report(
 
 @router.get("/maintenance-pending")
 def maintenance_pending_report(
+    plant: Optional[str] = None,
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_reports")),
 ):
-    tickets = (
-        db.query(models.Maintenance)
+    scope = get_user_scope(current_user, db)
+    plant = validate_plant_param(plant, scope)
+
+    query = (
+        db.query(models.Maintenance, models.Location)
+        .join(models.Location, models.Maintenance.location_id == models.Location.location_id)
         .filter(models.Maintenance.status.notin_(["Closed", "Verified"]))
-        .order_by(models.Maintenance.opened_date.desc())
-        .all()
     )
+
+    if not scope.is_global:
+        if scope.is_empty:
+            return create_api_response(True, "Report generated successfully", {"count": 0, "data": []})
+        if plant:
+            query = query.filter(models.Location.plant == plant)
+        else:
+            query = query.filter(models.Location.plant.in_(scope.plants))
+        if scope.departments:
+            query = query.filter(models.Location.department.in_(scope.departments))
+    elif plant:
+        query = query.filter(models.Location.plant == plant)
+
+    tickets = query.order_by(models.Maintenance.opened_date.desc()).all()
     result = []
-    for t in tickets:
+    for t, loc in tickets:
         days_open = (datetime.utcnow() - t.opened_date).days if t.opened_date else 0
-        loc = (
-            db.query(models.Location)
-            .filter(models.Location.location_id == t.location_id)
-            .first()
-            if t.location_id
-            else None
-        )
         result.append(
             {
                 "maintenance_id": t.maintenance_id,
                 "asset_id": t.asset_id,
                 "location": loc.location_name if loc else None,
+                "plant": loc.plant if loc else None,
                 "issue": t.issue,
                 "priority": t.priority,
                 "status": t.status,
@@ -244,15 +315,34 @@ def maintenance_pending_report(
 
 @router.get("/maintenance-closed")
 def maintenance_closed_report(
+    plant: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     limit: int = 500,
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_reports")),
 ):
-    query = db.query(models.Maintenance).filter(
-        models.Maintenance.status.in_(["Closed", "Verified"])
+    scope = get_user_scope(current_user, db)
+    plant = validate_plant_param(plant, scope)
+
+    query = (
+        db.query(models.Maintenance, models.Location)
+        .join(models.Location, models.Maintenance.location_id == models.Location.location_id)
+        .filter(models.Maintenance.status.in_(["Closed", "Verified"]))
     )
+
+    if not scope.is_global:
+        if scope.is_empty:
+            return create_api_response(True, "Report generated successfully", {"count": 0, "data": []})
+        if plant:
+            query = query.filter(models.Location.plant == plant)
+        else:
+            query = query.filter(models.Location.plant.in_(scope.plants))
+        if scope.departments:
+            query = query.filter(models.Location.department.in_(scope.departments))
+    elif plant:
+        query = query.filter(models.Location.plant == plant)
+
     if start_date:
         query = query.filter(
             models.Maintenance.closed_date
@@ -266,7 +356,7 @@ def maintenance_closed_report(
 
     tickets = query.order_by(models.Maintenance.closed_date.desc()).limit(limit).all()
     result = []
-    for t in tickets:
+    for t, loc in tickets:
         duration = None
         if t.closed_date:
             duration = (t.closed_date - t.opened_date).days if t.opened_date else 0
@@ -274,6 +364,8 @@ def maintenance_closed_report(
             {
                 "maintenance_id": t.maintenance_id,
                 "asset_id": t.asset_id,
+                "location": loc.location_name if loc else None,
+                "plant": loc.plant if loc else None,
                 "issue": t.issue,
                 "priority": t.priority,
                 "status": t.status,
@@ -288,22 +380,37 @@ def maintenance_closed_report(
 
 @router.get("/compliance")
 def compliance_report(
+    plant: Optional[str] = None,
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_reports")),
 ):
     """Compliance summary by plant and department."""
-    departments = (
-        db.query(models.Location.department, models.Location.plant).distinct().all()
-    )
+    scope = get_user_scope(current_user, db)
+    plant = validate_plant_param(plant, scope)
+
+    loc_query = db.query(models.Location.department, models.Location.plant).distinct()
+    if not scope.is_global:
+        if scope.is_empty:
+            return create_api_response(True, "Report generated successfully", {"count": 0, "data": []})
+        if plant:
+            loc_query = loc_query.filter(models.Location.plant == plant)
+        else:
+            loc_query = loc_query.filter(models.Location.plant.in_(scope.plants))
+        if scope.departments:
+            loc_query = loc_query.filter(models.Location.department.in_(scope.departments))
+    elif plant:
+        loc_query = loc_query.filter(models.Location.plant == plant)
+
+    departments = loc_query.all()
     result = []
-    for dept, plant in departments:
+    for dept, p_name in departments:
         if not dept:
             continue
         total = (
             db.query(models.Location)
             .filter(
                 models.Location.department == dept,
-                models.Location.plant == plant,
+                models.Location.plant == p_name,
                 models.Location.status == "Active",
             )
             .count()
@@ -313,14 +420,14 @@ def compliance_report(
             .join(models.Asset, models.Asset.location_id == models.Location.location_id)
             .filter(
                 models.Location.department == dept,
-                models.Location.plant == plant,
+                models.Location.plant == p_name,
             )
             .count()
         )
         compliance = round((installed / total) * 100, 1) if total > 0 else 0.0
         result.append(
             {
-                "plant": plant,
+                "plant": p_name,
                 "department": dept,
                 "total_locations": total,
                 "installed": installed,
@@ -333,6 +440,7 @@ def compliance_report(
 
 @router.get("/asset-movement")
 def asset_movement_report(
+    plant: Optional[str] = None,
     asset_id: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
@@ -340,7 +448,27 @@ def asset_movement_report(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_reports")),
 ):
+    scope = get_user_scope(current_user, db)
+    plant = validate_plant_param(plant, scope)
+
     query = db.query(models.AssetHistory)
+    if not scope.is_global:
+        if scope.is_empty:
+            return {"count": 0, "data": []}
+        # Filter movements where asset's current or target location is in user's plants
+        if plant:
+            query = query.join(models.Asset, models.AssetHistory.asset_id == models.Asset.asset_id).join(
+                models.Location, models.Asset.location_id == models.Location.location_id
+            ).filter(models.Location.plant == plant)
+        else:
+            query = query.join(models.Asset, models.AssetHistory.asset_id == models.Asset.asset_id).join(
+                models.Location, models.Asset.location_id == models.Location.location_id
+            ).filter(models.Location.plant.in_(scope.plants))
+    elif plant:
+        query = query.join(models.Asset, models.AssetHistory.asset_id == models.Asset.asset_id).join(
+            models.Location, models.Asset.location_id == models.Location.location_id
+        ).filter(models.Location.plant == plant)
+
     if asset_id:
         query = query.filter(models.AssetHistory.asset_id == asset_id)
     if start_date:
