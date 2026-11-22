@@ -14,8 +14,9 @@ from .. import models, schemas
 from ..core.config import settings
 from ..core import database
 from ..core import dependencies as auth
+from ..core.scope import apply_scope, check_record_scope
 from ..services.inspection_service import process_inspection
-from ..utils import auto_calculate_inspection_status, create_audit_log
+from ..utils import auto_calculate_inspection_status, create_audit_log, validate_and_sanitize_image
 
 router = APIRouter()
 
@@ -37,6 +38,7 @@ def get_inspections(
     current_user: models.User = Depends(auth.require_permission("view_inspections")),
 ):
     query = db.query(models.Inspection)
+    query = apply_scope(query, current_user, db, models.Inspection)
     if location_id:
         query = query.filter(models.Inspection.location_id == location_id)
     if asset_id:
@@ -62,7 +64,7 @@ def get_inspections_due_today(
     due_locations = []
 
     locations = (
-        db.query(models.Location)
+        apply_scope(db.query(models.Location), current_user, db, models.Location)
         .filter(
             models.Location.status == "Active",
             models.Location.inspection_frequency is not None,
@@ -114,7 +116,7 @@ def get_inspection_form_data(
     location = (
         db.query(models.Location).filter(models.Location.qr_code == qr_value).first()
     )
-    if not location:
+    if not location or not check_record_scope(location, current_user, db):
         raise HTTPException(
             status_code=404, detail=f"No location found for QR code '{qr_value}'"
         )
@@ -198,7 +200,7 @@ def get_inspection(
         .filter(models.Inspection.inspection_id == inspection_id)
         .first()
     )
-    if not inspection:
+    if not inspection or not check_record_scope(inspection, current_user, db):
         raise HTTPException(status_code=404, detail="Inspection not found")
     return create_api_response(True, "Inspection retrieved", inspection)
 
@@ -215,7 +217,7 @@ def create_inspection(
         .filter(models.Location.location_id == inspection.location_id)
         .first()
     )
-    if not location:
+    if not location or not check_record_scope(location, current_user, db):
         raise HTTPException(
             status_code=404, detail=f"Location '{inspection.location_id}' not found"
         )
@@ -224,7 +226,7 @@ def create_inspection(
     asset_id = inspection.asset_id or getattr(location, "current_asset_id", None) or (location.assets[0].asset_id if location.assets else None)
     if asset_id:
         asset = db.query(models.Asset).filter(models.Asset.asset_id == asset_id).first()
-        if not asset:
+        if not asset or not check_record_scope(asset, current_user, db):
             raise HTTPException(status_code=404, detail=f"Asset '{asset_id}' not found")
 
     # Build checklist dict for status calculation
@@ -257,7 +259,7 @@ def create_inspection(
         **inspection_data,
         asset_id=asset_id,
         inspection_no=inspection_no,
-        inspector=inspection.inspector or current_user.name,
+        inspector=current_user.name,
         inspector_id=current_user.id,
         overall_status=overall_status,
         inspection_date=datetime.utcnow(),
@@ -289,31 +291,23 @@ async def upload_inspection_photos(
         .filter(models.Inspection.inspection_id == inspection_id)
         .first()
     )
-    if not inspection:
+    if not inspection or not check_record_scope(inspection, current_user, db):
         raise HTTPException(status_code=404, detail="Inspection not found")
 
-    ext = os.path.splitext(file.filename)[1].lower()
-    if ext not in settings.ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail=f"Invalid file type '{ext}'")
-
-    content = await file.read()
-    if len(content) > settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024:
-        raise HTTPException(
-            status_code=400, detail=f"File exceeds {settings.MAX_UPLOAD_SIZE_MB}MB"
-        )
+    sanitized_bytes, ext, mime_type = await validate_and_sanitize_image(file)
 
     import uuid
 
     filename = f"insp_{inspection_id}_{uuid.uuid4().hex[:8]}{ext}"
     save_path = os.path.join(settings.UPLOAD_DIR, "photos", filename)
     with open(save_path, "wb") as f:
-        f.write(content)
+        f.write(sanitized_bytes)
 
     attachment = models.Attachment(
         related_id=str(inspection_id),
         related_type="inspection",
         file_path=f"uploads/photos/{filename}",
-        file_type=file.content_type,
+        file_type=mime_type,
         label=label,
         uploaded_by=current_user.id,
     )
@@ -333,5 +327,13 @@ def get_inspection_photos(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_inspections")),
 ):
+    inspection = (
+        db.query(models.Inspection)
+        .filter(models.Inspection.inspection_id == inspection_id)
+        .first()
+    )
+    if not inspection or not check_record_scope(inspection, current_user, db):
+        raise HTTPException(status_code=404, detail="Inspection not found")
+
     photos = db.query(models.Attachment).filter(models.Attachment.related_type == "inspection", models.Attachment.related_id == str(inspection_id)).all()
     return create_api_response(True, "Photos retrieved", photos)

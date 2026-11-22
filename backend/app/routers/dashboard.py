@@ -439,7 +439,7 @@ def get_recent_activity(
                 "table": log.table_name,
                 "record_id": log.record_id,
                 "user": user_name if user_name else "System",
-                "timestamp": log.timestamp.isoformat(),
+                "timestamp": log.timestamp.isoformat() if log.timestamp else datetime.utcnow().isoformat(),
             }
         )
     return create_api_response(True, "Dashboard data retrieved", {"activity": activity})

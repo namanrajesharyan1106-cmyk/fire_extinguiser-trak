@@ -34,6 +34,7 @@ class Maintenance(Base):
         ForeignKey("users.id", ondelete="SET NULL"), index=True
     )
     verified_by: Mapped[Optional[str]] = mapped_column(String)
+    completed_by_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     status: Mapped[Optional[str]] = mapped_column(String)
     opened_date: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
     completion_date: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)

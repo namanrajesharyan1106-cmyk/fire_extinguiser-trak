@@ -237,3 +237,90 @@ def model_to_dict(obj, exclude=None):
         result[column.name] = value
 
     return result
+
+
+# =============================================================================
+# Image Validation & Sanitization
+# =============================================================================
+
+
+async def validate_and_sanitize_image(
+    file,
+    max_size_mb: int = settings.MAX_UPLOAD_SIZE_MB,
+) -> tuple[bytes, str, str]:
+    """
+    Stream and validate image content.
+    - Enforces size limit by reading in chunks.
+    - Validates real image content with Pillow (verify).
+    - Strips EXIF metadata and normalizes orientation.
+    - Re-encodes to safe format (JPEG, PNG, WEBP).
+    Returns (sanitized_bytes, file_extension, mime_type).
+    """
+    from PIL import Image, ImageOps
+    import io
+    from fastapi import HTTPException
+
+    chunk_size = 64 * 1024  # 64KB
+    max_bytes = max_size_mb * 1024 * 1024
+    total_bytes = 0
+    buffer = io.BytesIO()
+
+    while True:
+        chunk = await file.read(chunk_size)
+        if not chunk:
+            break
+        total_bytes += len(chunk)
+        if total_bytes > max_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File exceeds maximum allowed size of {max_size_mb}MB",
+            )
+        buffer.write(chunk)
+
+    if total_bytes == 0:
+        raise HTTPException(status_code=400, detail="Empty file uploaded")
+
+    raw_bytes = buffer.getvalue()
+
+    # Step 1: Pillow verify
+    try:
+        verify_img = Image.open(io.BytesIO(raw_bytes))
+        verify_img.verify()
+        detected_format = verify_img.format
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid image file or corrupt image data",
+        )
+
+    if not detected_format or detected_format.upper() not in ["JPEG", "PNG", "WEBP"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported image format '{detected_format}'. Allowed: JPEG, PNG, WEBP",
+        )
+
+    # Step 2: Re-open image to strip EXIF and re-encode
+    try:
+        img = Image.open(io.BytesIO(raw_bytes))
+        img = ImageOps.exif_transpose(img)
+
+        output_format = detected_format.upper()
+        ext_map = {"JPEG": ".jpg", "PNG": ".png", "WEBP": ".webp"}
+        mime_map = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}
+
+        if output_format == "JPEG" and img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+
+        out_buffer = io.BytesIO()
+        img.save(out_buffer, format=output_format)
+        sanitized_bytes = out_buffer.getvalue()
+
+        return sanitized_bytes, ext_map[output_format], mime_map[output_format]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to process and sanitize image: {str(e)}",
+        )
+

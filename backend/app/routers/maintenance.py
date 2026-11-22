@@ -4,6 +4,7 @@ Maintenance router — 8-stage workflow, technician assignment, evidence photos.
 """
 
 import os
+import uuid
 from datetime import datetime
 from typing import List, Optional
 
@@ -16,7 +17,8 @@ from ..core import database
 from ..core import dependencies as auth
 from ..core.constants import MAINTENANCE_TRANSITIONS
 from ..core.constants import role_has_permission as _role_has_perm
-from ..utils import create_audit_log
+from ..core.scope import apply_scope, check_record_scope, get_user_scope
+from ..utils import create_audit_log, validate_and_sanitize_image
 
 router = APIRouter()
 
@@ -25,6 +27,46 @@ def create_api_response(
 ) -> dict:
     return {"success": success, "message": message, "data": data, "errors": errors}
 
+
+def _get_ticket_plant(ticket: models.Maintenance, db: Session) -> Optional[str]:
+    if ticket.location_id:
+        loc = db.query(models.Location).filter(models.Location.location_id == ticket.location_id).first()
+        if loc and loc.plant:
+            return loc.plant
+    if ticket.asset_id:
+        ast = db.query(models.Asset).filter(models.Asset.asset_id == ticket.asset_id).first()
+        if ast and ast.location and ast.location.plant:
+            return ast.location.plant
+    return None
+
+
+def _validate_technician_assignment(
+    technician_id: int, ticket_plant: Optional[str], current_user: models.User, db: Session
+) -> models.User:
+    if current_user.role not in ["ADMIN", "SAFETY HEAD", "SAFETY OFFICER"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Only Safety Officers, Safety Heads, and Admins can assign technicians",
+        )
+    tech = (
+        db.query(models.User)
+        .filter(models.User.id == technician_id, models.User.status == "Active")
+        .first()
+    )
+    if not tech:
+        raise HTTPException(
+            status_code=400, detail="Assigned technician not found or inactive"
+        )
+    if ticket_plant:
+        tech_scope = get_user_scope(tech, db)
+        if not tech_scope.is_global and (
+            tech_scope.plants is None or ticket_plant not in tech_scope.plants
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Technician does not belong to ticket's plant '{ticket_plant}'",
+            )
+    return tech
 
 
 @router.get("", response_model=schemas.APIResponse[List[schemas.MaintenanceResponse]])
@@ -39,6 +81,15 @@ def get_maintenance_tickets(
     current_user: models.User = Depends(auth.require_permission("view_maintenance")),
 ):
     query = db.query(models.Maintenance)
+    query = apply_scope(query, current_user, db, models.Maintenance)
+
+    if current_user.role == "MAINTENANCE":
+        # Can view tickets assigned to self OR unassigned in scope
+        query = query.filter(
+            (models.Maintenance.technician_id == current_user.id)
+            | (models.Maintenance.technician_id.is_(None))
+        )
+
     if status:
         query = query.filter(models.Maintenance.status == status)
     if priority:
@@ -56,12 +107,16 @@ def get_open_tickets(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_maintenance")),
 ):
-    tickets = (
-        db.query(models.Maintenance)
-        .filter(models.Maintenance.status.notin_(["Closed", "Verified"]))
-        .order_by(models.Maintenance.opened_date.desc())
-        .all()
+    query = db.query(models.Maintenance).filter(
+        models.Maintenance.status.notin_(["Closed", "Verified"])
     )
+    query = apply_scope(query, current_user, db, models.Maintenance)
+    if current_user.role == "MAINTENANCE":
+        query = query.filter(
+            (models.Maintenance.technician_id == current_user.id)
+            | (models.Maintenance.technician_id.is_(None))
+        )
+    tickets = query.order_by(models.Maintenance.opened_date.desc()).all()
     return create_api_response(True, "Open tickets retrieved", {"count": len(tickets), "tickets": [schemas.MaintenanceResponse.model_validate(t) for t in tickets]})
 
 
@@ -76,8 +131,14 @@ def get_ticket(
         .filter(models.Maintenance.maintenance_id == ticket_id)
         .first()
     )
-    if not ticket:
+    if not ticket or not check_record_scope(ticket, current_user, db):
         raise HTTPException(status_code=404, detail="Maintenance ticket not found")
+
+    if current_user.role == "MAINTENANCE":
+        # Can view tickets assigned to self OR unassigned in scope
+        if ticket.technician_id is not None and ticket.technician_id != current_user.id:
+            raise HTTPException(status_code=404, detail="Maintenance ticket not found")
+
     return create_api_response(True, "Ticket retrieved", ticket)
 
 
@@ -87,13 +148,15 @@ def create_maintenance_ticket(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("create_maintenance")),
 ):
+    asset = None
+    location = None
     if ticket.asset_id:
         asset = (
             db.query(models.Asset)
             .filter(models.Asset.asset_id == ticket.asset_id)
             .first()
         )
-        if not asset:
+        if not asset or not check_record_scope(asset, current_user, db):
             raise HTTPException(
                 status_code=404, detail=f"Asset '{ticket.asset_id}' not found"
             )
@@ -104,15 +167,19 @@ def create_maintenance_ticket(
             .filter(models.Location.location_id == ticket.location_id)
             .first()
         )
-        if not location:
+        if not location or not check_record_scope(location, current_user, db):
             raise HTTPException(
                 status_code=404, detail=f"Location '{ticket.location_id}' not found"
             )
 
-
-
     ticket_data = ticket.model_dump()
     ticket_data.pop("source", None)
+
+    ticket_plant = location.plant if location else (asset.location.plant if asset and asset.location else None)
+
+    # Validate technician_id assignment if passed
+    if ticket_data.get("technician_id") is not None:
+        _validate_technician_assignment(ticket_data["technician_id"], ticket_plant, current_user, db)
 
     new_ticket = models.Maintenance(
         **ticket_data,
@@ -122,13 +189,6 @@ def create_maintenance_ticket(
     db.add(new_ticket)
     
     if ticket.asset_id:
-        asset = db.query(models.Asset).filter(models.Asset.asset_id == ticket.asset_id).first()
-        if asset:
-            asset.status = "Under Maintenance"
-
-    
-    if ticket.asset_id:
-        asset = db.query(models.Asset).filter(models.Asset.asset_id == ticket.asset_id).first()
         if asset:
             asset.status = "Under Maintenance"
 
@@ -154,10 +214,35 @@ def update_maintenance_ticket(
         .filter(models.Maintenance.maintenance_id == ticket_id)
         .first()
     )
-    if not ticket:
+    if not ticket or not check_record_scope(ticket, current_user, db):
         raise HTTPException(status_code=404, detail="Ticket not found")
 
-    for key, value in update.model_dump(exclude_unset=True).items():
+    update_dict = update.model_dump(exclude_unset=True)
+
+    # Never allow client to set verified_by or completed_by_id via update endpoint
+    update_dict.pop("verified_by", None)
+    update_dict.pop("completed_by_id", None)
+
+    if current_user.role == "MAINTENANCE":
+        # Technicians can only update tickets assigned to them
+        if ticket.technician_id != current_user.id:
+            raise HTTPException(
+                status_code=403,
+                detail="Technicians can only update tickets assigned to them",
+            )
+        # Cannot change technician_id
+        if "technician_id" in update_dict and update_dict["technician_id"] != ticket.technician_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Technicians cannot change technician assignment",
+            )
+    else:
+        # Safety Officer / Head / Admin updating technician_id
+        if "technician_id" in update_dict and update_dict["technician_id"] is not None:
+            ticket_plant = _get_ticket_plant(ticket, db)
+            _validate_technician_assignment(update_dict["technician_id"], ticket_plant, current_user, db)
+
+    for key, value in update_dict.items():
         setattr(ticket, key, value)
 
     ticket.updated_at = datetime.utcnow()
@@ -178,8 +263,22 @@ def update_ticket_status(
         .filter(models.Maintenance.maintenance_id == ticket_id)
         .first()
     )
-    if not ticket:
+    if not ticket or not check_record_scope(ticket, current_user, db):
         raise HTTPException(status_code=404, detail="Ticket not found")
+
+    if current_user.role == "MAINTENANCE":
+        # Technicians can only update tickets assigned to them
+        if ticket.technician_id != current_user.id:
+            raise HTTPException(
+                status_code=403,
+                detail="Technicians can only update tickets assigned to them",
+            )
+        # Cannot change technician_id
+        if status_update.technician_id is not None and status_update.technician_id != ticket.technician_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Technicians cannot change technician assignment",
+            )
 
     # Validate transition
     allowed_next = MAINTENANCE_TRANSITIONS.get(ticket.status, [])
@@ -199,6 +298,12 @@ def update_ticket_status(
                 status_code=403,
                 detail="Only Safety Officers/Heads can verify maintenance",
             )
+        # Separation of duties: the user who moved a ticket to "Completed" cannot also "Verify" it
+        if ticket.completed_by_id and ticket.completed_by_id == current_user.id:
+            raise HTTPException(
+                status_code=400,
+                detail="The user who completed the maintenance ticket cannot verify it.",
+            )
 
     if status_update.new_status == "Closed":
         if not _role_has_perm(current_user.role, "close_maintenance"):
@@ -216,13 +321,17 @@ def update_ticket_status(
         )
 
     if status_update.technician_id:
+        ticket_plant = _get_ticket_plant(ticket, db)
+        _validate_technician_assignment(status_update.technician_id, ticket_plant, current_user, db)
         ticket.technician_id = status_update.technician_id
 
-    if status_update.verified_by:
-        ticket.verified_by = status_update.verified_by
+    # verified_by must NEVER be taken from the request body — set it to current_user.id server-side
+    if status_update.new_status == "Verified":
+        ticket.verified_by = str(current_user.id)
 
     if status_update.new_status == "Completed":
         ticket.completion_date = datetime.utcnow()
+        ticket.completed_by_id = current_user.id
     elif status_update.new_status == "Closed":
         ticket.closed_date = datetime.utcnow()
 
@@ -236,7 +345,6 @@ def update_ticket_status(
             asset = db.query(models.Asset).filter(models.Asset.asset_id == ticket.asset_id).first()
             if asset:
                 asset.status = "Active"
-
 
     ticket.updated_at = datetime.utcnow()
     db.commit()
@@ -268,25 +376,13 @@ def close_maintenance_ticket(
         .filter(models.Maintenance.maintenance_id == ticket_id)
         .first()
     )
-    if not ticket:
+    if not ticket or not check_record_scope(ticket, current_user, db):
         raise HTTPException(status_code=404, detail="Maintenance ticket not found")
 
     ticket.status = "Closed"
     ticket.closed_date = datetime.utcnow()
     ticket.remarks = remarks
     ticket.updated_at = datetime.utcnow()
-    
-    if ticket.asset_id:
-        other_open = db.query(models.Maintenance).filter(
-            models.Maintenance.asset_id == ticket.asset_id,
-            models.Maintenance.maintenance_id != ticket.maintenance_id,
-            models.Maintenance.status.notin_(["Closed", "Verified", "Completed"])
-        ).first()
-        if not other_open:
-            asset = db.query(models.Asset).filter(models.Asset.asset_id == ticket.asset_id).first()
-            if asset:
-                asset.status = "Active"
-
     
     if ticket.asset_id:
         other_open = db.query(models.Maintenance).filter(
@@ -317,32 +413,28 @@ async def upload_maintenance_photos(
         .filter(models.Maintenance.maintenance_id == ticket_id)
         .first()
     )
-    if not ticket:
+    if not ticket or not check_record_scope(ticket, current_user, db):
         raise HTTPException(status_code=404, detail="Ticket not found")
 
-    ext = os.path.splitext(file.filename)[1].lower()
-    allowed_mimes = ["image/jpeg", "image/png", "image/webp"]
-    if file.content_type not in allowed_mimes or ext not in settings.ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail=f"Invalid file type '{ext}' or MIME type '{file.content_type}'")
-
-    content = await file.read()
-    if len(content) > settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024:
+    # If technician, can only upload photos for tickets assigned to them
+    if current_user.role == "MAINTENANCE" and ticket.technician_id != current_user.id:
         raise HTTPException(
-            status_code=400, detail=f"File exceeds {settings.MAX_UPLOAD_SIZE_MB}MB"
+            status_code=403,
+            detail="Technicians can only upload photos for tickets assigned to them",
         )
 
-    import uuid
+    sanitized_bytes, ext, mime_type = await validate_and_sanitize_image(file)
 
     filename = f"maint_{ticket_id}_{uuid.uuid4().hex[:8]}{ext}"
     save_path = os.path.join(settings.UPLOAD_DIR, "photos", filename)
     with open(save_path, "wb") as f:
-        f.write(content)
+        f.write(sanitized_bytes)
 
     attachment = models.Attachment(
         related_id=str(ticket_id),
         related_type="maintenance",
         file_path=f"uploads/photos/{filename}",
-        file_type=file.content_type,
+        file_type=mime_type,
         label=label,
         uploaded_by=current_user.id,
     )
@@ -358,5 +450,16 @@ def get_maintenance_photos(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_maintenance")),
 ):
+    ticket = (
+        db.query(models.Maintenance)
+        .filter(models.Maintenance.maintenance_id == ticket_id)
+        .first()
+    )
+    if not ticket or not check_record_scope(ticket, current_user, db):
+        raise HTTPException(status_code=404, detail="Maintenance ticket not found")
+
+    if current_user.role == "MAINTENANCE" and ticket.technician_id is not None and ticket.technician_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Maintenance ticket not found")
+
     photos = db.query(models.Attachment).filter(models.Attachment.related_type == "maintenance", models.Attachment.related_id == str(ticket_id)).all()
     return create_api_response(True, "Photos retrieved", photos)

@@ -30,6 +30,7 @@ class InspectionResponse(InspectionBase):
     model_config = ConfigDict(from_attributes=True)
     inspection_id: int
     inspection_no: Optional[str] = None
+    inspector_id: Optional[int] = None
     overall_status: Optional[str] = None
     inspection_date: Optional[datetime] = None
     photo: Optional[str] = None

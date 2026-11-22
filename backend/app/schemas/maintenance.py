@@ -38,6 +38,7 @@ class MaintenanceResponse(MaintenanceBase):
     maintenance_id: int
     status: str
     technician_id: Optional[int] = None
+    completed_by_id: Optional[int] = None
     verified_by: Optional[str] = None
     opened_date: Optional[datetime] = None
     completion_date: Optional[datetime] = None

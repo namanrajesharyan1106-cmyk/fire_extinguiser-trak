@@ -24,7 +24,7 @@ from ..services.asset_service import (
     unlink_asset_from_location,
     validate_asset_assignment,
 )
-from ..utils import create_audit_log, generate_qr_code_image, model_to_dict
+from ..utils import create_audit_log, generate_qr_code_image, model_to_dict, validate_and_sanitize_image
 from .locations import generate_system_id
 from ..core.scope import apply_scope, check_record_scope, get_user_scope
 
@@ -1206,29 +1206,16 @@ async def upload_asset_photo(
     current_user: models.User = Depends(auth.require_permission("edit_asset")),
 ):
     asset = db.query(models.Asset).filter(models.Asset.asset_id == asset_id).first()
-    if not asset:
+    if not asset or not check_record_scope(asset, current_user, db):
         raise HTTPException(status_code=404, detail="Asset not found")
 
-    ext = os.path.splitext(file.filename)[1].lower()
-    allowed_mimes = ["image/jpeg", "image/png", "image/webp"]
-    if file.content_type not in allowed_mimes or ext not in settings.ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid file type '{ext}' or MIME type '{file.content_type}'. Allowed: {list(settings.ALLOWED_EXTENSIONS)}",
-        )
+    sanitized_bytes, ext, _ = await validate_and_sanitize_image(file)
 
-    # Check size
-    content = await file.read()
-    if len(content) > settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File exceeds {settings.MAX_UPLOAD_SIZE_MB}MB limit",
-        )
-
-    filename = f"asset_{asset_id}{ext}"
+    import uuid
+    filename = f"asset_{asset_id}_{uuid.uuid4().hex[:8]}{ext}"
     save_path = os.path.join(settings.UPLOAD_DIR, "photos", filename)
     with open(save_path, "wb") as f:
-        f.write(content)
+        f.write(sanitized_bytes)
 
     asset.photo = f"uploads/photos/{filename}"
     db.commit()
