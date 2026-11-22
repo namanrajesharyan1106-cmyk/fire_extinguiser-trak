@@ -1,45 +1,51 @@
-# Python
-__pycache__/
-*.py[cod]
-*.db
-*.bak
-
-# Environment files
+# Environment
 .env
 *.env
+.env.local
+.env.production
 
-# Node
-node_modules/
-
-# Build
-dist/
-build/
-
-# IDE
-.vscode/
-.idea/
-
-# Logs
-*.log
-
-# Zip files
-*.zip
-
-# Python virtual environments
-venv/
-.venv/
+# Databases and Backups
+*.db
+*.db-journal
+*.db.bak
+*.db.backup*
+*.db.*
+*.bak
 
 # Uploads
+uploads/
 backend/uploads/
 
-# OS files
-.DS_Store
-Thumbs.db
-
-# Python cache
+# Python Cache & Tooling
+__pycache__/
+*.py[cod]
+*$py.class
 .pytest_cache/
 .mypy_cache/
-
-# Coverage
+.ruff_cache/
 .coverage
 htmlcov/
+
+# Virtual Environments
+venv/
+.venv/
+env/
+.env/
+
+# Node & Frontend
+node_modules/
+dist/
+build/
+.oxlintrc.json
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log

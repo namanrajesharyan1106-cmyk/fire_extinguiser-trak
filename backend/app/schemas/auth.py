@@ -59,6 +59,6 @@ class SessionResponse(BaseModel):
     id: int
     device_name: Optional[str] = None
     ip_address: Optional[str] = None
-    created_at: datetime
-    expires_at: datetime
-    is_revoked: bool
+    created_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+    is_revoked: Optional[bool] = False

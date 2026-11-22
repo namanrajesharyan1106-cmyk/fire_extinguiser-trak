@@ -20,6 +20,8 @@ def test_maintenance_submission():
         "/api/maintenance",
         headers=headers,
         json={
+            "asset_id": "AST-2AE5A2F7",
+            "location_id": "LOC-A7B6BBB3",
             "issue": "Test issue",
             "priority": "Medium",
             "source": "Manual"

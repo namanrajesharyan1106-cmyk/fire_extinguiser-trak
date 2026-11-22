@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from .. import models
-from ..config import settings
+from ..core.config import settings
 from ..utils import create_notifications_for_roles
 
 

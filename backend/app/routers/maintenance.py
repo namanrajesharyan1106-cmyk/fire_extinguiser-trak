@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
-from ..config import settings
+from ..core.config import settings
 from ..core import database
 from ..core import dependencies as auth
 from ..core.constants import MAINTENANCE_TRANSITIONS
@@ -225,18 +225,6 @@ def update_ticket_status(
         ticket.completion_date = datetime.utcnow()
     elif status_update.new_status == "Closed":
         ticket.closed_date = datetime.utcnow()
-
-    if status_update.new_status in ["Completed", "Closed", "Verified"] and ticket.asset_id:
-        other_open = db.query(models.Maintenance).filter(
-            models.Maintenance.asset_id == ticket.asset_id,
-            models.Maintenance.maintenance_id != ticket.maintenance_id,
-            models.Maintenance.status.notin_(["Closed", "Verified", "Completed"])
-        ).first()
-        if not other_open:
-            asset = db.query(models.Asset).filter(models.Asset.asset_id == ticket.asset_id).first()
-            if asset:
-                asset.status = "Active"
-
 
     if status_update.new_status in ["Completed", "Closed", "Verified"] and ticket.asset_id:
         other_open = db.query(models.Maintenance).filter(

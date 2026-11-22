@@ -143,6 +143,10 @@ class Location(Base):
         return self.required_capacity_rel.name if self.required_capacity_rel else None
 
     @property
+    def current_asset_id(self) -> Optional[str]:
+        return self.assets[0].asset_id if self.assets else None
+
+    @property
     def current_assets_count(self) -> int:
         return len(self.assets) if self.assets else 0
 

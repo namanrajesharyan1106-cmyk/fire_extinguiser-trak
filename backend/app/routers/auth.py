@@ -148,11 +148,13 @@ def get_active_sessions(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
+    now = datetime.utcnow()
     sessions = (
         db.query(models.RefreshToken)
         .filter(
             models.RefreshToken.user_id == current_user.id,
-            models.RefreshToken == False.is_revoked,
+            (models.RefreshToken.is_revoked == False) | (models.RefreshToken.is_revoked.is_(None)),
+            models.RefreshToken.expires_at > now,
         )
         .all()
     )

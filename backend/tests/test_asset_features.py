@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from fastapi.testclient import TestClient
 from app.main import app
-from app.database import SessionLocal
+from app.core.database import SessionLocal
 from app.models import Asset, User, AuditLog, MasterAssetType, MasterCapacityType, Location
 from app.core.security import create_access_token
 

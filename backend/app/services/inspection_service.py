@@ -7,7 +7,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from .. import models
-from ..constants import MANDATORY_CHECKLIST_FIELDS
+from ..core.constants import MANDATORY_CHECKLIST_FIELDS
 from ..utils import create_notifications_for_roles
 
 

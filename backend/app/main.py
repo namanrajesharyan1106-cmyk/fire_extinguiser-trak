@@ -9,6 +9,9 @@ Startup:
 """
 
 import os
+import time
+import uuid
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -21,10 +24,10 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from .core.limiter import limiter
-from .auth import create_default_admin
 from .core.config import settings
 from .core.database import Base, SessionLocal, engine
-from .core.logger import logger
+from .core.logger import logger, request_id_var
+from .services.rbac_service import create_default_admin
 from .routers import (
     admin,
     assets,
@@ -47,26 +50,38 @@ Base.metadata.create_all(bind=engine)
 os.makedirs(os.path.join(settings.UPLOAD_DIR, "qr"), exist_ok=True)
 os.makedirs(os.path.join(settings.UPLOAD_DIR, "photos"), exist_ok=True)
 
+# ─── Lifespan Context Manager ────────────────────────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from sqlalchemy import text
+    import sys
+    db = SessionLocal()
+    try:
+        db.execute(text("SELECT 1"))
+        logger.info("[STARTUP] Database connection established successfully.")
+        create_default_admin(db)
+    except Exception as e:
+        logger.error(f"[STARTUP CRITICAL] Database connection failed or setup error: {e}")
+        sys.exit(1)
+    finally:
+        db.close()
+    yield
+
 # ─── FastAPI App ──────────────────────────────────────────────────────────────
+is_production = settings.ENVIRONMENT.lower() == "production"
+
 app = FastAPI(
     title=settings.APP_TITLE,
     version=settings.APP_VERSION,
     description="QR-Based Fire Safety Asset Management System for Manufacturing Plants",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url=None if is_production else "/docs",
+    redoc_url=None if is_production else "/redoc",
+    lifespan=lifespan,
 )
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
-
-@app.on_event("startup")
-def on_startup():
-    db = SessionLocal()
-    try:
-        create_default_admin(db)
-    finally:
-        db.close()
 
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
@@ -77,10 +92,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-import time
-import uuid
-from .core.logger import request_id_var
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -108,22 +119,6 @@ async def log_requests(request: Request, call_next):
 
 # ─── Static Files (for serving uploaded images & QR codes) ───────────────────
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
-
-# ─── Startup Event ────────────────────────────────────────────────────────────
-@app.on_event("startup")
-def startup_event():
-    from sqlalchemy import text
-    import sys
-    db = SessionLocal()
-    try:
-        db.execute(text("SELECT 1"))
-        logger.info("[STARTUP] Database connection established successfully.")
-        create_default_admin(db)
-    except Exception as e:
-        logger.error(f"[STARTUP CRITICAL] Database connection failed or setup error: {e}")
-        sys.exit(1)
-    finally:
-        db.close()
 
 
 # ─── Exception Handlers ───────────────────────────────────────────────────────

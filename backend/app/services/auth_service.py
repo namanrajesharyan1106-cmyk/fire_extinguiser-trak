@@ -24,9 +24,11 @@ def create_refresh_token(db: Session, user_id: int, request: Optional[Request] =
     db_token = RefreshToken(
         token_hash=get_password_hash(raw_token),
         user_id=user_id,
+        created_at=datetime.utcnow(),
         expires_at=expire,
         ip_address=ip_address,
         device_name=device_name,
+        is_revoked=False,
     )
     db.add(db_token)
     db.commit()

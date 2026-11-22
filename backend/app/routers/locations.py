@@ -11,7 +11,7 @@ from sqlalchemy import exc, or_
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
-from ..config import settings
+from ..core.config import settings
 from ..core import database
 from ..core import dependencies as auth
 from ..schemas.base import APIResponse
@@ -871,12 +871,12 @@ def delete_location(
         raise HTTPException(status_code=404, detail="Location not found")
 
     # Safe Delete: Prevent deletion if an asset is currently assigned
-    asset = getattr(db_location, "assets", None)
-
-    if asset is not None:
+    assigned_assets = db_location.assets or []
+    if len(assigned_assets) > 0:
+        first_asset_id = assigned_assets[0].asset_id
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot delete location '{location_id}' because asset '{asset.asset_id}' is assigned. Unlink the asset first.",
+            detail=f"Cannot delete location '{location_id}' because asset '{first_asset_id}' is assigned. Unlink the asset first.",
         )
 
     db.delete(db_location)

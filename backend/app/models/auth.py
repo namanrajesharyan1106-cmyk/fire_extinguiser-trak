@@ -25,11 +25,11 @@ class RefreshToken(Base):
     user_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE")
     )
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, default=datetime.datetime.utcnow)
     expires_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
     device_name: Mapped[Optional[str]] = mapped_column(String)
     ip_address: Mapped[Optional[str]] = mapped_column(String)
-    is_revoked: Mapped[Optional[bool]] = mapped_column(Boolean)
+    is_revoked: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
     revoked_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
 
     user: Mapped[Optional["User"]] = relationship(

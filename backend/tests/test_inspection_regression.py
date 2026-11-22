@@ -22,8 +22,10 @@ def test_inspection_submission():
         headers=headers,
         json={
             "location_id": test_loc_id,
-            "location_name": "Test Location",
-            "plant": "Test Plant"
+            "location_name": f"Test Loc {uuid.uuid4().hex[:6]}",
+            "plant": "PP02",
+            "required_asset_type_id": 1,
+            "required_capacity_id": 1
         }
     )
     assert loc_resp.status_code == 201, f"Failed to create location: {loc_resp.text}"

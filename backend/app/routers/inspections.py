@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
-from ..config import settings
+from ..core.config import settings
 from ..core import database
 from ..core import dependencies as auth
 from ..services.inspection_service import process_inspection
@@ -221,7 +221,7 @@ def create_inspection(
         )
 
     # Use current asset from location if not specified
-    asset_id = inspection.asset_id or location.current_asset_id
+    asset_id = inspection.asset_id or getattr(location, "current_asset_id", None) or (location.assets[0].asset_id if location.assets else None)
     if asset_id:
         asset = db.query(models.Asset).filter(models.Asset.asset_id == asset_id).first()
         if not asset:

@@ -5,6 +5,13 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
+  server: {
+    host: true, // network pe expose (npm run dev -- --host ki zaroorat nahi)
+    proxy: {
+      '/api': 'http://127.0.0.1:8000',
+      '/uploads': 'http://127.0.0.1:8000',
+    },
+  },
   plugins: [
     react(),
     VitePWA({

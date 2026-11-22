@@ -16,7 +16,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
-from ..config import settings
+from ..core.config import settings
 from ..core import database
 from ..core import dependencies as auth
 from ..services.asset_service import (
