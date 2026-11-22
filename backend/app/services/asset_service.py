@@ -93,8 +93,13 @@ def validate_asset_assignment(
     if is_refill_overdue(asset):
         warnings.append(f"Asset '{asset_id}' refill is overdue.")
 
-    # 7. Check Capacity
-    if location.current_assets_count >= location.max_assets:
+    # 7. Check Capacity & Existing Occupant
+    existing_occupant = db.query(Asset).filter(Asset.location_id == location_id, Asset.asset_id != asset_id).first()
+    if existing_occupant:
+        warnings.append(
+            f"Location '{location_id}' currently holds asset '{existing_occupant.asset_id}'. Reassignment will replace it."
+        )
+    elif location.current_assets_count >= location.max_assets:
         if not (asset.location_id == location_id):  # if it's not already in this location
             errors.append(f"Location '{location_id}' is at full capacity ({location.max_assets}).")
 
@@ -123,10 +128,21 @@ def perform_asset_assignment(
 
         old_location_id = asset.location_id
 
-        # Ensure we don't exceed capacity if it's a new assignment to this location
-        if old_location_id != location_id:
-            if location.current_assets_count >= location.max_assets:
-                raise ValueError(f"Location '{location_id}' is at full capacity.")
+        # If another asset is currently occupying this location, safely unlink it to respect UNIQUE(location_id)
+        existing_occupant = db.query(Asset).filter(Asset.location_id == location_id, Asset.asset_id != asset_id).first()
+        if existing_occupant:
+            existing_occupant.location_id = None
+            db.add(existing_occupant)
+            db.add(AssetHistory(
+                asset_id=existing_occupant.asset_id,
+                old_location_id=location_id,
+                new_location_id=None,
+                movement_type="Transfer",
+                movement_reason=f"Replaced by {asset_id} at {location_id}",
+                changed_by=changed_by,
+                movement_date=datetime.datetime.utcnow(),
+            ))
+            db.flush()
 
         # Assign
         asset.location_id = location_id

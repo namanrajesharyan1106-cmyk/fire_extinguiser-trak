@@ -82,6 +82,7 @@ const Login: React.FC = () => {
       console.error('Login Error:', err);
 
       setError(
+        err?.response?.data?.message ||
         err?.response?.data?.detail ||
         err?.message ||
         'Login failed. Please try again.'

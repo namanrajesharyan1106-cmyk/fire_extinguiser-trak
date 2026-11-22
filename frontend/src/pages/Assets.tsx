@@ -7,7 +7,7 @@ import {
   TablePagination, InputAdornment, Chip, Tooltip
 } from '@mui/material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit2, Link as LinkIcon, Trash2, Search, Unlink, QrCode } from 'lucide-react';
+import { Plus, Edit2, Link as LinkIcon, Trash2, Search, Unlink, QrCode, Download, Upload } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -15,6 +15,7 @@ import api from '../api/axios';
 import { toast } from 'react-toastify';
 import AssetAssignmentDrawer from '../components/AssetAssignmentDrawer';
 import QRScannerDialog from '../components/QRScannerDialog';
+import AssetBulkUploadDialog from '../components/AssetBulkUploadDialog';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface Asset {
@@ -68,6 +69,7 @@ const Assets: React.FC = () => {
   const [open, setOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedAssetForLink, setSelectedAssetForLink] = useState<string | null>(null);
@@ -165,6 +167,21 @@ const Assets: React.FC = () => {
   });
 
   // ─── Handlers ────────────────────────────────────────────────────────────
+  const handleDownloadSample = async () => {
+    try {
+      const res = await api.get('/assets/bulk-upload/sample', { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'Asset_Bulk_Upload_Sample.xlsx');
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode?.removeChild(link);
+    } catch {
+      toast.error('Failed to download asset sample file');
+    }
+  };
+
   const handleOpen = (asset?: Asset) => {
     if (asset) {
       setEditingId(asset.asset_id);
@@ -235,6 +252,21 @@ const Assets: React.FC = () => {
             onClick={() => setScannerOpen(true)}
           >
             Scan Asset
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<Download size={18} />}
+            onClick={handleDownloadSample}
+          >
+            Download Sample
+          </Button>
+          <Button
+            variant="contained"
+            color="secondary"
+            startIcon={<Upload size={18} />}
+            onClick={() => setBulkUploadOpen(true)}
+          >
+            Bulk Upload
           </Button>
           <Button
             variant="contained"
@@ -456,6 +488,16 @@ const Assets: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+      {/* Asset Bulk Upload Modal */}
+      <AssetBulkUploadDialog
+        open={bulkUploadOpen}
+        onClose={() => setBulkUploadOpen(false)}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ['assets'] });
+          queryClient.invalidateQueries({ queryKey: ['locations'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+        }}
+      />
     </Box>
   );
 };

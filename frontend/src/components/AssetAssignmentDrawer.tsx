@@ -121,7 +121,8 @@ const AssetAssignmentDrawer: React.FC<AssetAssignmentDrawerProps> = ({ open, onC
       if (!asset || !selectedLocation) throw new Error("Missing assignment data");
       return api.post(`/assets/${asset.asset_id}/link/${selectedLocation.location_id}`, {
         movement_reason: 'Assigned via Enterprise Drawer',
-        movement_type: 'Assignment'
+        movement_type: 'Assignment',
+        force: true
       });
     },
     onSuccess: () => {

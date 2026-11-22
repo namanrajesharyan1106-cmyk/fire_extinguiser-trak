@@ -6,13 +6,15 @@ import {
   FormControl, InputLabel, Select, MenuItem, InputAdornment
 } from '@mui/material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit2, Trash2, QrCode, Search, Download, Upload } from 'lucide-react';
+import { Plus, Edit2, Trash2, QrCode, Search, Download, Upload, Link2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import api from '../api/axios';
 import { toast } from 'react-toastify';
+import LocationBulkUploadDialog from '../components/LocationBulkUploadDialog';
+import LocationAssetAssignmentDrawer from '../components/LocationAssetAssignmentDrawer';
 
 const locationSchema = z.object({
   location_id: z.string().optional(),
@@ -41,11 +43,11 @@ const Locations: React.FC = () => {
   const isAdmin = user.role === 'ADMIN';
 
   // Bulk Upload state
-  const [bulkSummary, setBulkSummary] = useState<any>(null);
-  const [templateError, setTemplateError] = useState<boolean>(false);
-  const [isUploading, setIsUploading] = useState<boolean>(false);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
   
+  // Assign Asset Drawer state
+  const [selectedAssignLoc, setSelectedAssignLoc] = useState<any | null>(null);
+
   // Delete Confirmation state
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
@@ -69,7 +71,7 @@ const Locations: React.FC = () => {
           plant: filterPlant || undefined,
         }
       });
-      return res.data.data; // Standardized API response
+      return res.data.data;
     }
   });
 
@@ -167,45 +169,9 @@ const Locations: React.FC = () => {
       document.body.appendChild(link);
       link.click();
       link.parentNode?.removeChild(link);
-    } catch (err: any) {
+    } catch {
       toast.error('Failed to download sample file');
     }
-  };
-
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    
-    setIsUploading(true);
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    try {
-      const res = await api.post('/locations/bulk-upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      setBulkSummary(res.data.data);
-      queryClient.invalidateQueries({ queryKey: ['locations'] });
-    } catch (err: any) {
-      if (err.response?.headers?.['x-template-error'] || err.response?.data?.detail === "Invalid Excel Template") {
-        setTemplateError(true);
-      } else {
-        toast.error(err.response?.data?.detail || 'Failed to upload locations');
-      }
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
-
-  const handleDownloadErrorReport = () => {
-    if (!bulkSummary?.error_report) return;
-    const link = document.createElement('a');
-    link.href = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${bulkSummary.error_report}`;
-    link.download = 'Failed_Locations_Report.xlsx';
-    document.body.appendChild(link);
-    link.click();
-    link.parentNode?.removeChild(link);
   };
 
   if (isError) return <Typography color="error">Error loading locations.</Typography>;
@@ -220,10 +186,14 @@ const Locations: React.FC = () => {
               <Button variant="outlined" startIcon={<Download size={18} />} onClick={handleDownloadSample}>
                 Download Sample
               </Button>
-              <Button variant="contained" color="secondary" startIcon={isUploading ? <CircularProgress size={18} /> : <Upload size={18} />} onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+              <Button 
+                variant="contained" 
+                color="secondary" 
+                startIcon={<Upload size={18} />} 
+                onClick={() => setBulkUploadOpen(true)}
+              >
                 Bulk Upload
               </Button>
-              <input type="file" ref={fileInputRef} style={{ display: 'none' }} accept=".xlsx, .xls" onChange={handleFileUpload} />
             </>
           )}
           <Button variant="contained" startIcon={<Plus size={18} />} onClick={() => handleOpen()}>
@@ -259,6 +229,9 @@ const Locations: React.FC = () => {
             }}
           >
             <MenuItem value=""><em>All Plants</em></MenuItem>
+            <MenuItem value="PP02">PP02</MenuItem>
+            <MenuItem value="PP04">PP04</MenuItem>
+            <MenuItem value="PP05">PP05</MenuItem>
             <MenuItem value="Plant A">Plant A</MenuItem>
             <MenuItem value="Plant B">Plant B</MenuItem>
             <MenuItem value="Main Facility">Main Facility</MenuItem>
@@ -310,9 +283,34 @@ const Locations: React.FC = () => {
                       )}
                     </TableCell>
                     <TableCell align="right">
-                       <IconButton size="small" color="primary" title="Generate / View QR" onClick={() => { if (loc.qr_code) { setQrPreviewLoc(loc); } else { generateQrMutation.mutate(loc.location_id); } }}><QrCode size={18} /></IconButton>
-                       <IconButton size="small" color="secondary" onClick={() => handleOpen(loc)}><Edit2 size={18} /></IconButton>
-                       <IconButton size="small" color="error" onClick={() => setDeleteConfirmId(loc.location_id)}><Trash2 size={18} /></IconButton>
+                      <IconButton 
+                        size="small" 
+                        color="primary" 
+                        title="Assign Asset to Location" 
+                        onClick={() => setSelectedAssignLoc(loc)}
+                      >
+                        <Link2 size={18} />
+                      </IconButton>
+                      <IconButton 
+                        size="small" 
+                        color="primary" 
+                        title="Generate / View QR" 
+                        onClick={() => { 
+                          if (loc.qr_code) { 
+                            setQrPreviewLoc(loc); 
+                          } else { 
+                            generateQrMutation.mutate(loc.location_id); 
+                          } 
+                        }}
+                      >
+                        <QrCode size={18} />
+                      </IconButton>
+                      <IconButton size="small" color="secondary" onClick={() => handleOpen(loc)}>
+                        <Edit2 size={18} />
+                      </IconButton>
+                      <IconButton size="small" color="error" onClick={() => setDeleteConfirmId(loc.location_id)}>
+                        <Trash2 size={18} />
+                      </IconButton>
                     </TableCell>
                   </TableRow>
                 ))
@@ -436,65 +434,19 @@ const Locations: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Invalid Template Dialog */}
-      <Dialog open={templateError} onClose={() => setTemplateError(false)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ color: 'error.main' }}>Invalid Excel Template</DialogTitle>
-        <DialogContent>
-          <Typography mb={2}>
-            The uploaded Excel file does not match the required template.
-          </Typography>
-          <Typography>
-            Please download the official sample template and upload your data using the same format.
-          </Typography>
-          <Box sx={{ mt: 2, p: 2, bgcolor: '#fff4e5', borderRadius: 1 }}>
-            <Typography variant="subtitle2" fontWeight="bold" gutterBottom>Common Issues:</Typography>
-            <ul>
-              <li><Typography variant="body2">Missing Columns</Typography></li>
-              <li><Typography variant="body2">Extra Columns</Typography></li>
-              <li><Typography variant="body2">Incorrect Column Names</Typography></li>
-              <li><Typography variant="body2">Wrong Column Order</Typography></li>
-            </ul>
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleDownloadSample} variant="outlined" startIcon={<Download size={16} />}>Download Sample</Button>
-          <Button onClick={() => setTemplateError(false)} variant="contained">Close</Button>
-        </DialogActions>
-      </Dialog>
+      {/* Location Bulk Upload Modal */}
+      <LocationBulkUploadDialog
+        open={bulkUploadOpen}
+        onClose={() => setBulkUploadOpen(false)}
+        onSuccess={() => queryClient.invalidateQueries({ queryKey: ['locations'] })}
+      />
 
-      {/* Bulk Upload Summary Dialog */}
-      <Dialog open={!!bulkSummary} onClose={() => setBulkSummary(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>Import Summary</DialogTitle>
-        <DialogContent dividers>
-          <Box display="grid" gridTemplateColumns="1fr 1fr" gap={2}>
-            <Card sx={{ p: 2, textAlign: 'center', bgcolor: '#f8f9fa' }}>
-              <Typography variant="h4" fontWeight="bold" color="primary">{bulkSummary?.summary?.total || 0}</Typography>
-              <Typography variant="body2" color="text.secondary">Total Rows</Typography>
-            </Card>
-            <Card sx={{ p: 2, textAlign: 'center', bgcolor: '#e6f4ea' }}>
-              <Typography variant="h4" fontWeight="bold" color="success.main">{bulkSummary?.summary?.imported || 0}</Typography>
-              <Typography variant="body2" color="text.secondary">Imported</Typography>
-            </Card>
-            <Card sx={{ p: 2, textAlign: 'center', bgcolor: '#fce8e6' }}>
-              <Typography variant="h4" fontWeight="bold" color="error.main">{bulkSummary?.summary?.failed || 0}</Typography>
-              <Typography variant="body2" color="text.secondary">Failed</Typography>
-            </Card>
-            <Card sx={{ p: 2, textAlign: 'center', bgcolor: '#fef7e0' }}>
-              <Typography variant="h4" fontWeight="bold" color="warning.main">{bulkSummary?.summary?.skipped || 0}</Typography>
-              <Typography variant="body2" color="text.secondary">Skipped</Typography>
-            </Card>
-          </Box>
-          {bulkSummary?.error_report && (
-             <Box mt={3} p={2} bgcolor="#fff4e5" borderRadius={1} display="flex" justifyContent="space-between" alignItems="center">
-               <Typography variant="body2">Some rows failed to import. Download the error report to see the details.</Typography>
-               <Button variant="contained" color="error" size="small" onClick={handleDownloadErrorReport} startIcon={<Download size={16} />}>Error Report</Button>
-             </Box>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setBulkSummary(null)}>Close</Button>
-        </DialogActions>
-      </Dialog>
+      {/* Location Asset Assignment Drawer */}
+      <LocationAssetAssignmentDrawer
+        open={!!selectedAssignLoc}
+        onClose={() => setSelectedAssignLoc(null)}
+        location={selectedAssignLoc}
+      />
     </Box>
   );
 };
