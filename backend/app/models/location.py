@@ -90,17 +90,19 @@ class Location(Base):
     gps_lng: Mapped[Optional[float]] = mapped_column(Float)
 
     # Audit
-    created_at: Mapped[datetime.datetime] = mapped_column(
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(
         DateTime,
+        default=datetime.datetime.utcnow,
         server_default=func.now(),
-        nullable=False,
+        nullable=True,
     )
 
-    updated_at: Mapped[datetime.datetime] = mapped_column(
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(
         DateTime,
+        default=datetime.datetime.utcnow,
         server_default=func.now(),
         onupdate=func.now(),
-        nullable=False,
+        nullable=True,
     )
 
     created_by_id: Mapped[Optional[int]] = mapped_column(Integer)
