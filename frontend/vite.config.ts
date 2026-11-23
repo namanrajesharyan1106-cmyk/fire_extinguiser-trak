@@ -1,13 +1,14 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type PluginOption } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
-export default defineConfig({
-  server: {
-    host: true, // expose dev server on the LAN so a phone can open it
-  },
-  plugins: [
+// `npm run dev`        -> plain http  (same as before)
+// `npm run dev:https`  -> https with a self-signed cert + /api proxy to the backend
+export default defineConfig(async ({ mode }) => {
+  const useHttps = mode === 'https'
+
+  const plugins: PluginOption[] = [
     react(),
     VitePWA({
       registerType: 'autoUpdate',
@@ -29,5 +30,27 @@ export default defineConfig({
         ]
       }
     })
-  ],
+  ]
+
+  if (useHttps) {
+    // Loaded only in https mode so plain `npm run dev` never needs it.
+    const { default: basicSsl } = await import('@vitejs/plugin-basic-ssl')
+    plugins.push(basicSsl())
+  }
+
+  return {
+    server: {
+      host: true, // expose dev server on the LAN so a phone can open it
+      // The browser only talks to this one https origin; Vite forwards /api to
+      // the http backend on this same machine. No mixed content, no CORS.
+      // 127.0.0.1 (not "localhost") avoids Windows resolving localhost to ::1.
+      proxy: {
+        '/api': {
+          target: 'http://127.0.0.1:8000',
+          xfwd: true, // pass real client IP/proto so rate limits stay per-user
+        },
+      },
+    },
+    plugins,
+  }
 })

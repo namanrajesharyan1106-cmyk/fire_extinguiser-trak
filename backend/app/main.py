@@ -90,7 +90,7 @@ app.add_middleware(SlowAPIMiddleware)
 # even when the laptop's IP changes. In any other environment only the explicit
 # ALLOWED_ORIGINS list is allowed.
 _dev_origin_regex = (
-    r"^http://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?$"
+    r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?$"
     if settings.ENVIRONMENT == "development"
     else None
 )
@@ -117,7 +117,8 @@ async def log_requests(request: Request, call_next):
         process_time = time.time() - start_time
         response.headers["X-Request-ID"] = req_id
         response.headers["X-Process-Time"] = str(process_time)
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        if is_production:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"

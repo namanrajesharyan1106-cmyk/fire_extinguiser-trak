@@ -34,7 +34,7 @@ const Header: React.FC = () => {
     queryKey: ['globalSearch', searchQuery],
     queryFn: async () => {
       if (searchQuery.length < 2) return [];
-      const res = await api.get('/search', { params: { q: searchQuery } });
+      const res = await api.get('/search/', { params: { q: searchQuery } });
       return res.data?.data || [];
     },
     enabled: searchQuery.length >= 2,
@@ -52,7 +52,7 @@ const Header: React.FC = () => {
   const { data: notifData } = useQuery({
     queryKey: ['notifications'],
     queryFn: async () => {
-      const res = await api.get('/notifications');
+      const res = await api.get('/notifications/');
       return res.data?.data || [];
     },
     refetchInterval: 30000,

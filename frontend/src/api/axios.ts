@@ -1,12 +1,17 @@
 import axios from 'axios';
 
-// The backend is called on the same host the page was opened from, port 8000.
-// PC (localhost)        -> http://localhost:8000/api
-// Phone (192.168.x.x)   -> http://192.168.x.x:8000/api
-// VITE_API_URL (if set) always wins, e.g. for production.
+// Where the API lives:
+// - VITE_API_URL (if set) always wins, e.g. for production.
+// - Page opened over https (npm run dev:https) -> "/api" (Vite proxies it to the
+//   backend, so the browser never makes an insecure http call).
+// - Page opened over plain http -> same host, port 8000 (unchanged behaviour):
+//     PC (localhost)       -> http://localhost:8000/api
+//     Phone (192.168.x.x)  -> http://192.168.x.x:8000/api
 const API_URL =
   import.meta.env.VITE_API_URL ||
-  `${window.location.protocol}//${window.location.hostname}:8000/api`;
+  (window.location.protocol === 'https:'
+    ? '/api'
+    : `${window.location.protocol}//${window.location.hostname}:8000/api`);
 
 const api = axios.create({
   baseURL: API_URL,
