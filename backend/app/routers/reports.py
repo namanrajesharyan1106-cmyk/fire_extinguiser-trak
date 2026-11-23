@@ -46,7 +46,10 @@ def asset_register(
         query = query.filter(models.Location.plant == plant)
 
     if asset_type:
-        query = query.filter(models.Asset.asset_type == asset_type)
+        query = query.join(
+            models.MasterAssetType,
+            models.Asset.asset_type_id == models.MasterAssetType.id,
+        ).filter(models.MasterAssetType.name == asset_type)
     if status:
         query = query.filter(models.Asset.status == status)
     if department:

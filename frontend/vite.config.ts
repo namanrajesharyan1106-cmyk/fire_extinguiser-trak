@@ -1,16 +1,11 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
   server: {
-    host: true,
-    proxy: {
-      '/api': 'http://127.0.0.1:8000',
-      '/uploads': 'http://127.0.0.1:8000',
-    },
+    host: true, // expose dev server on the LAN so a phone can open it
   },
   plugins: [
     react(),

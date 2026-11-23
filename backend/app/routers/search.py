@@ -28,11 +28,15 @@ def global_search(
 
     # ── Assets ────────────────────────────────────────────────────────────────
     assets = (
-        apply_scope(db.query(models.Asset), current_user, db, models.Asset)
+        db.query(models.Asset)
+        .outerjoin(
+            models.MasterAssetType,
+            models.Asset.asset_type_id == models.MasterAssetType.id,
+        )
         .filter(
             (models.Asset.asset_id.ilike(search_term))
             | (models.Asset.serial_number.ilike(search_term))
-            | (models.Asset.asset_type.ilike(search_term))
+            | (models.MasterAssetType.name.ilike(search_term))
             | (models.Asset.barcode.ilike(search_term))
         )
         .limit(limit // 2)

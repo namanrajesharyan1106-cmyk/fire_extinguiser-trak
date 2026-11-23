@@ -1,5 +1,9 @@
 import axios from 'axios';
 
+// The backend is called on the same host the page was opened from, port 8000.
+// PC (localhost)        -> http://localhost:8000/api
+// Phone (192.168.x.x)   -> http://192.168.x.x:8000/api
+// VITE_API_URL (if set) always wins, e.g. for production.
 const API_URL =
   import.meta.env.VITE_API_URL ||
   `${window.location.protocol}//${window.location.hostname}:8000/api`;
@@ -11,102 +15,25 @@ const api = axios.create({
   },
 });
 
-let isRefreshing = false;
-let failedQueue: Array<{
-  resolve: (token: string) => void;
-  reject: (error: any) => void;
-}> = [];
-
-const processQueue = (error: any, token: string | null = null) => {
-  failedQueue.forEach((prom) => {
-    if (error) {
-      prom.reject(error);
-    } else if (token) {
-      prom.resolve(token);
-    }
-  });
-  failedQueue = [];
-};
-
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
-  }
-  const selectedPlant = localStorage.getItem('selectedPlant');
-  if (selectedPlant && config.params && config.params.plant === undefined) {
-    config.params.plant = selectedPlant;
   }
   return config;
 });
 
 api.interceptors.response.use(
   (response) => response,
-  async (error) => {
-    const originalRequest = error.config;
-    const isAuthRequest =
-      originalRequest?.url?.includes('/auth/login') ||
-      originalRequest?.url?.includes('/auth/refresh') ||
-      originalRequest?.url?.includes('/auth/logout');
-
-    if (error.response?.status === 401 && !isAuthRequest && !originalRequest._retry) {
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          failedQueue.push({ resolve, reject });
-        })
-          .then((token) => {
-            originalRequest.headers.Authorization = `Bearer ${token}`;
-            return api(originalRequest);
-          })
-          .catch((err) => Promise.reject(err));
-      }
-
-      originalRequest._retry = true;
-      isRefreshing = true;
-
-      const refreshToken = localStorage.getItem('refreshToken');
-      if (!refreshToken) {
-        isRefreshing = false;
-        localStorage.removeItem('token');
-        localStorage.removeItem('refreshToken');
-        localStorage.removeItem('user');
-        window.location.href = '/login';
-        return Promise.reject(error);
-      }
-
-      try {
-        const res = await axios.post(`${API_URL}/auth/refresh`, {
-          refresh_token: refreshToken,
-        });
-
-        const data = res.data?.data || res.data;
-        const newAccessToken = data?.access_token;
-        const newRefreshToken = data?.refresh_token;
-
-        if (newAccessToken) {
-          localStorage.setItem('token', newAccessToken);
-          if (newRefreshToken) {
-            localStorage.setItem('refreshToken', newRefreshToken);
-          }
-          api.defaults.headers.common.Authorization = `Bearer ${newAccessToken}`;
-          originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
-          processQueue(null, newAccessToken);
-          return api(originalRequest);
-        } else {
-          throw new Error('Refresh token returned invalid payload');
-        }
-      } catch (refreshErr) {
-        processQueue(refreshErr, null);
-        localStorage.removeItem('token');
-        localStorage.removeItem('refreshToken');
-        localStorage.removeItem('user');
-        window.location.href = '/login';
-        return Promise.reject(refreshErr);
-      } finally {
-        isRefreshing = false;
-      }
+  (error) => {
+    // A 401 on the login request itself must NOT trigger a page reload,
+    // otherwise the "wrong password" message disappears.
+    const isLoginRequest = error.config?.url?.includes('/auth/login');
+    if (error.response && error.response.status === 401 && !isLoginRequest) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
     }
-
     return Promise.reject(error);
   }
 );

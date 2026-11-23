@@ -85,9 +85,20 @@ app.add_middleware(SlowAPIMiddleware)
 
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
+# In development, also allow the dev frontend opened from this machine or from a
+# device on the local network (192.168.x.x / 10.x.x.x), so the phone keeps working
+# even when the laptop's IP changes. In any other environment only the explicit
+# ALLOWED_ORIGINS list is allowed.
+_dev_origin_regex = (
+    r"^http://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?$"
+    if settings.ENVIRONMENT == "development"
+    else None
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins_list,
+    allow_origin_regex=_dev_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

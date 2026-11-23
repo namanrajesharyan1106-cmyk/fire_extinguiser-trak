@@ -491,14 +491,19 @@ def get_asset_type_distribution(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.require_permission("view_dashboard")),
 ):
-    base_assets = apply_scope(db.query(models.Asset), current_user, db, models.Asset)
+    # Asset.asset_type is a Python @property (not a DB column), so group by the
+    # MasterAssetType name through a join instead.
     types = (
-        base_assets.outerjoin(models.MasterAssetType, models.Asset.asset_type_id == models.MasterAssetType.id)
-        .with_entities(
-            func.coalesce(models.MasterAssetType.name, "Other").label("asset_type"),
+        db.query(
+            func.coalesce(models.MasterAssetType.name, "Unknown"),
             func.count(models.Asset.asset_id).label("count"),
         )
-        .group_by(func.coalesce(models.MasterAssetType.name, "Other"))
+        .select_from(models.Asset)
+        .outerjoin(
+            models.MasterAssetType,
+            models.Asset.asset_type_id == models.MasterAssetType.id,
+        )
+        .group_by(models.MasterAssetType.name)
         .all()
     )
 

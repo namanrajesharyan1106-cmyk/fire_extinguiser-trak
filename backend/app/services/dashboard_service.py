@@ -263,9 +263,16 @@ def get_plant_stats(db: Session):
 
 
 def get_asset_type_distribution(db: Session):
+    from ..models.system import MasterAssetType
+
     types = (
-        db.query(Asset.asset_type, func.count(Asset.asset_id).label("count"))
-        .group_by(Asset.asset_type)
+        db.query(
+            func.coalesce(MasterAssetType.name, "Unknown"),
+            func.count(Asset.asset_id).label("count"),
+        )
+        .select_from(Asset)
+        .outerjoin(MasterAssetType, Asset.asset_type_id == MasterAssetType.id)
+        .group_by(MasterAssetType.name)
         .all()
     )
 
